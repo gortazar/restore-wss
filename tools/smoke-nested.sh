@@ -19,6 +19,9 @@
 #   3. it reports a real window with its app id, pid and geometry
 #   4. the daemon captures that window without being asked and writes it to disk
 #   5. `restore-wss status` prints the live session
+#   6. a placement is applied and captured
+#   7. with the window gone, `restore-wss restore` plans to launch it and does
+#   8. the restored window comes back on the workspace it was captured on
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -104,6 +107,61 @@ if "$PYTHON" -m restore_wss status | tee /dev/stderr | grep -q "Live session fro
     ok "status"
 else
     fail "status"
+fi
+
+step "6. the window is placed where the snapshot wants it"
+# Move it somewhere specific, snapshot that, and the rest of the test is about getting back here.
+window_id="$(echo "$windows" | grep -o '"id":"[0-9]*"' | head -1 | cut -d'"' -f4)"
+call PlaceWindow "$window_id" \
+    '{"workspace":2,"frame":{"x":40,"y":60,"width":700,"height":500},"frame_space":"monitor"}' \
+    >/dev/null
+sleep 2
+"$PYTHON" -m restore_wss save >/dev/null
+if grep -q '"workspace": 2' "$snapshot"; then
+    ok "the move was captured (workspace 3)"
+else
+    fail "the move was not captured: $(grep -o '"workspace": [0-9]*' "$snapshot" | head -2 | tr '\n' ' ')"
+fi
+
+step "7. the session is lost (the window closes) and restore brings it back"
+# Kill the exact process the compositor reported, never `pkill gnome-terminal-server`: the
+# developer's own desktop is very likely running one of those too.
+term_pid="$(echo "$windows" | grep -o '"pid":[0-9]*' | head -1 | cut -d: -f2)"
+[ -n "$term_pid" ] && kill "$term_pid" 2>/dev/null || true
+for _ in $(seq 1 20); do
+    echo "$(call ListWindows)" | grep -q 'gnome-terminal-server' || break
+    sleep 1
+done
+plan="$("$PYTHON" -m restore_wss restore --dry-run 2>&1 || true)"
+echo "$plan"
+if echo "$plan" | grep -q "start org.gnome.Terminal.desktop"; then
+    ok "the plan is to launch the terminal again"
+else
+    fail "unexpected plan"
+fi
+
+output="$("$PYTHON" -m restore_wss restore --yes 2>&1 || true)"
+echo "$output"
+if echo "$output" | grep -q "^   done"; then ok "restore reported success"; else fail "restore"; fi
+
+step "8. the restored window is on the workspace it was captured on"
+placed=""
+for _ in $(seq 1 30); do
+    placed="$(call ListWindows)"
+    echo "$placed" | grep -q 'gnome-terminal-server' && break
+    sleep 1
+done
+if echo "$placed" | python3 -c '
+import ast, json, sys
+raw = sys.stdin.read().strip()
+windows = json.loads(ast.literal_eval(raw[1:-2] + ""))
+term = [w for w in windows if w["app_id"] == "org.gnome.Terminal.desktop"]
+print("windows:", [(w["workspace"], w["frame"]) for w in term])
+sys.exit(0 if term and term[0]["workspace"] == 2 else 1)
+'; then
+    ok "back on workspace 3"
+else
+    fail "the restored window is not on the workspace it was captured on"
 fi
 
 printf '\n%s\n' "-----"

@@ -190,6 +190,8 @@ def _build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="what is currently captured")
     status.add_argument("--json", action="store_true", help="print the snapshot as JSON")
 
+    sub.add_parser("save", help="capture and write a snapshot now")
+
     restore = sub.add_parser("restore", help="put the workspaces back")
     restore.add_argument("--dry-run", action="store_true", help="print the plan and stop")
     restore.add_argument("--yes", action="store_true", help="do not ask for confirmation")
@@ -225,6 +227,16 @@ def main(
             return 0
         _print_status(resolved, sys.stdout)
         return 0
+
+    if args.command == "save":
+        try:
+            from .busclient import DaemonClient  # imported late: needs PyGObject
+
+            print((client_factory or DaemonClient)().save())
+            return 0
+        except Exception as error:  # noqa: BLE001
+            print(f"restore-wss: cannot reach the daemon ({error}). Is restore-wss-daemon running?")
+            return 1
 
     if args.command == "restore":
         return _restore(args, client_factory=client_factory, confirm=confirm)
