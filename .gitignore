@@ -6,3 +6,6 @@ result-*
 /dist/
 /build/
 *.egg-info/
+
+# Shallow clones of the prior-art tools read for docs/similar-tools.md.
+.research/
