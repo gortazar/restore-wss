@@ -33,6 +33,11 @@ Restoring 4 window(s) across 3 workspace(s):
 
 Nothing happens until you say so. `restore` asks; `--yes` is a flag, not the default.
 
+At the first login after a reboot — if you have turned that on — the same plan arrives as a window
+instead, with the doubtful items switched off:
+
+![The review window](screenshots/review.png)
+
 ## How it works, in one paragraph
 
 The snapshot is written **continuously**, not at logout — a design forced by the fact that the
@@ -60,7 +65,7 @@ a file.
 | --- | --- |
 | `restore-wss status [--json]` | what is captured now, and whether it came from the daemon or from disk |
 | `restore-wss save` | force a snapshot now |
-| `restore-wss restore [--dry-run] [--yes] [--json]` | show the plan, then carry it out |
+| `restore-wss restore [--dry-run] [--yes] [--gui] [--json]` | show the plan, then carry it out |
 | `restore-wss daemon` | the capture loop (normally the systemd user unit) |
 | `restore-wss login-check` | the autostart entry's "was there a reboot?" check |
 

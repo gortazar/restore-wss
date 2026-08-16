@@ -155,6 +155,11 @@ def _restore(args, client_factory=None, confirm=None) -> int:
         print(f"restore-wss: cannot reach the daemon ({error}). Is restore-wss-daemon running?")
         return 1
 
+    if getattr(args, "gui", False):
+        from .review import run_review
+
+        return run_review(client)
+
     if args.json:
         import json as _json
 
@@ -200,6 +205,9 @@ def _build_parser() -> argparse.ArgumentParser:
     restore.add_argument("--dry-run", action="store_true", help="print the plan and stop")
     restore.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     restore.add_argument("--json", action="store_true", help="print the plan as JSON and stop")
+    restore.add_argument(
+        "--gui", action="store_true", help="review it in a window instead of in the terminal"
+    )
 
     sub.add_parser(
         "login-check",
@@ -259,15 +267,16 @@ def main(
             print(f"restore-wss: not offering a restore — {decision.reason}.")
             return 0
         print(f"restore-wss: {decision.reason}.")
-        if decision.unattended:
-            return _restore(
-                argparse.Namespace(json=False, dry_run=False, yes=True),
-                client_factory=client_factory,
-            )
-        # Until the review dialog exists, say what to run rather than launching a dozen
-        # applications behind the user's back.
-        print("Run `restore-wss restore` to put the workspaces back.")
-        return 0
+        return _restore(
+            argparse.Namespace(
+                json=False,
+                dry_run=False,
+                # Unattended means unattended: no window, no question.
+                yes=decision.unattended,
+                gui=not decision.unattended,
+            ),
+            client_factory=client_factory,
+        )
 
     if args.command == "daemon":
         from .daemon import run  # imported late: needs PyGObject
