@@ -1,0 +1,44 @@
+{
+  "_comment": "An interactive `bash -i` on a pty, cwd ~/.cache/restore-wss-probe/my-repo, running `claude -r` in the foreground \u2014 the exact scenario PLAN.md opens with. Recorded by tools/proc-probe.py on 2026-08-16. The point of the fixture: the shell's own process group is NOT the foreground one (is_foreground false), and tpgid on the session leader names the job's pgrp. Home directory rewritten to /home/user.",
+  "tree": [
+    {
+      "pid": 182393,
+      "cmdline": [
+        "bash",
+        "-i"
+      ],
+      "cwd": "/home/user/.cache/restore-wss-probe/my-repo",
+      "exe": "/usr/bin/bash",
+      "comm": "bash",
+      "state": "S",
+      "ppid": 182392,
+      "pgrp": 182393,
+      "session": 182393,
+      "tty_nr": 34825,
+      "tpgid": 182461,
+      "starttime": 1069363,
+      "is_foreground": false,
+      "children": [
+        {
+          "pid": 182461,
+          "cmdline": [
+            "claude",
+            "-r"
+          ],
+          "cwd": "/home/user/.cache/restore-wss-probe/my-repo",
+          "exe": "/home/user/.local/share/claude/versions/2.1.233",
+          "comm": "claude",
+          "state": "S",
+          "ppid": 182393,
+          "pgrp": 182461,
+          "session": 182393,
+          "tty_nr": 34825,
+          "tpgid": 182461,
+          "starttime": 1069513,
+          "is_foreground": true,
+          "children": []
+        }
+      ]
+    }
+  ]
+}

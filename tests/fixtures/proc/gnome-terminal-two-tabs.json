@@ -1,0 +1,126 @@
+{
+  "_comment": "gnome-terminal-server with two tabs, recorded by tools/proc-probe.py in a nested headless GNOME Shell 46 on 2026-08-16. Tab 1: bash in ~/.cache/restore-wss-probe/my-repo running `sleep 900`. Tab 2: bash in $HOME running `ssh -o ProxyCommand=... my-host`. Home directory rewritten to /home/user.",
+  "tree": [
+    {
+      "pid": 177551,
+      "cmdline": [
+        "/usr/libexec/gnome-terminal-server"
+      ],
+      "cwd": "/home/user",
+      "exe": "/usr/libexec/gnome-terminal-server",
+      "comm": "gnome-terminal-",
+      "state": "S",
+      "ppid": 13960,
+      "pgrp": 176842,
+      "session": 176842,
+      "tty_nr": 0,
+      "tpgid": -1,
+      "starttime": 1052463,
+      "is_foreground": false,
+      "children": [
+        {
+          "pid": 177787,
+          "cmdline": [
+            "bash",
+            "-c",
+            "ssh -o ProxyCommand='sleep 900' my-host; true"
+          ],
+          "cwd": "/home/user",
+          "exe": "/usr/bin/bash",
+          "comm": "bash",
+          "state": "S",
+          "ppid": 177551,
+          "pgrp": 177787,
+          "session": 177787,
+          "tty_nr": 34823,
+          "tpgid": 177787,
+          "starttime": 1053027,
+          "is_foreground": true,
+          "children": [
+            {
+              "pid": 177790,
+              "cmdline": [
+                "ssh",
+                "-o",
+                "ProxyCommand=sleep 900",
+                "my-host"
+              ],
+              "cwd": "/home/user",
+              "exe": "/usr/bin/ssh",
+              "comm": "ssh",
+              "state": "S",
+              "ppid": 177787,
+              "pgrp": 177787,
+              "session": 177787,
+              "tty_nr": 34823,
+              "tpgid": 177787,
+              "starttime": 1053027,
+              "is_foreground": true,
+              "children": [
+                {
+                  "pid": 177792,
+                  "cmdline": [
+                    "sleep",
+                    "900"
+                  ],
+                  "cwd": "/home/user",
+                  "exe": "/usr/bin/sleep",
+                  "comm": "sleep",
+                  "state": "S",
+                  "ppid": 177790,
+                  "pgrp": 177787,
+                  "session": 177787,
+                  "tty_nr": 34823,
+                  "tpgid": 177787,
+                  "starttime": 1053028,
+                  "is_foreground": true,
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "pid": 177788,
+          "cmdline": [
+            "bash",
+            "-c",
+            "sleep 900; true"
+          ],
+          "cwd": "/home/user/.cache/restore-wss-probe/my-repo",
+          "exe": "/usr/bin/bash",
+          "comm": "bash",
+          "state": "S",
+          "ppid": 177551,
+          "pgrp": 177788,
+          "session": 177788,
+          "tty_nr": 34824,
+          "tpgid": 177788,
+          "starttime": 1053027,
+          "is_foreground": true,
+          "children": [
+            {
+              "pid": 177791,
+              "cmdline": [
+                "sleep",
+                "900"
+              ],
+              "cwd": "/home/user/.cache/restore-wss-probe/my-repo",
+              "exe": "/usr/bin/sleep",
+              "comm": "sleep",
+              "state": "S",
+              "ppid": 177788,
+              "pgrp": 177788,
+              "session": 177788,
+              "tty_nr": 34824,
+              "tpgid": 177788,
+              "starttime": 1053027,
+              "is_foreground": true,
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
