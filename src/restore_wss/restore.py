@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 from .plan import LAUNCH, PLACE, TERMINAL, Action, RestorePlan
 from .terminalcmd import terminal_argv
+from .vpn import interpret_failure
 
 
 @dataclass
@@ -37,6 +38,9 @@ class RestoreResult:
     results: list[ActionResult] = field(default_factory=list)
     workspaces_before: int = 0
     workspaces_after: int = 0
+    #: ``(connection name, state, detail)``. ``needs-you`` is neither success nor failure: the VPN
+    #: wants a password or a code, which is a prompt rather than something to retry.
+    vpn: list[tuple[str, str, str]] = field(default_factory=list)
 
     @property
     def failures(self) -> list[ActionResult]:
@@ -70,6 +74,7 @@ def execute(
     wait_seconds: float = 20.0,
     sleep=time.sleep,
     spawn=_spawn,
+    network_manager=None,
 ) -> RestoreResult:
     """Run ``plan`` against a ``ShellCoreClient``-shaped object.
 
@@ -133,6 +138,25 @@ def execute(
         result.results.append(
             ActionResult(action, "pending", f"no window yet after {wait_seconds:.0f} s")
         )
+
+    for vpn_action in plan.vpn.actions:
+        if vpn_action.kind == "already-up":
+            result.vpn.append((vpn_action.connection.name, "done", "already connected"))
+            continue
+        if network_manager is None:
+            result.vpn.append(
+                (vpn_action.connection.name, "failed", "NetworkManager is not reachable")
+            )
+            continue
+        try:
+            network_manager.activate(vpn_action.connection.uuid)
+            result.vpn.append((vpn_action.connection.name, "done", "reconnected"))
+        except Exception as error:  # noqa: BLE001
+            result.vpn.append(
+                (vpn_action.connection.name, "needs-you", interpret_failure(str(error)))
+            )
+    for missing in plan.vpn.missing:
+        result.vpn.append((missing.name, "failed", "NetworkManager no longer has this connection"))
 
     if plan.active_workspace:
         # Which workspace ends up in front is cosmetic; never worth failing a restore over.

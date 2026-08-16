@@ -34,6 +34,7 @@ from .plan import RestorePlan, build_plan
 from .protocol import API_VERSION, DAEMON_NAME, DAEMON_OBJECT_PATH
 from .restore import execute
 from .storage import SnapshotStore, default_state_dir
+from .vpn import NetworkManager, VpnConnection, plan_vpn
 
 #: How long to wait after the last change before writing. Long enough that a window drag is one
 #: write, short enough that a crash a moment later still has the new layout.
@@ -41,6 +42,10 @@ DEBOUNCE_SECONDS = 2.0
 
 #: A write happens at most this often even if the desktop is churning.
 MIN_WRITE_INTERVAL_SECONDS = 10.0
+
+#: How often to ask NetworkManager which VPNs are up. A snapshot is written every few seconds and
+#: a VPN does not change that often, so the answer is cached in between.
+VPN_POLL_SECONDS = 30.0
 
 
 class Daemon:
@@ -52,6 +57,7 @@ class Daemon:
         core: ShellCoreClient | None = None,
         *,
         config: Config | None = None,
+        network_manager: NetworkManager | None = None,
         clock=time.monotonic,
         wall_clock=time.time,
     ):
@@ -61,6 +67,9 @@ class Daemon:
         self._clock = clock
         self._wall_clock = wall_clock
         self._boot_id = read_boot_id()
+        self._nm = network_manager
+        self._vpn_cache: list[VpnConnection] = []
+        self._vpn_checked = 0.0
         self._snapshot = Snapshot(boot_id=self._boot_id)
         self._skipped: dict[str, int] = {}
         self._last_write = 0.0
@@ -95,9 +104,23 @@ class Daemon:
         apply_exclusions(result, self.config)
         enrich_terminals(result, self.config)
         enrich_documents(result, self.config)
+        vpns = self._active_vpns()
+        if vpns:
+            result.snapshot.extra["vpn"] = [connection.to_json() for connection in vpns]
         self._snapshot = result.snapshot
         self._skipped = result.skipped
         return result
+
+    def _active_vpns(self) -> list[VpnConnection]:
+        """The VPNs that are up, cached: a snapshot is written every few seconds and a VPN does
+        not change that often."""
+        if self._nm is None:
+            return self._vpn_cache
+        now = self._clock()
+        if not self._vpn_checked or now - self._vpn_checked > VPN_POLL_SECONDS:
+            self._vpn_cache = self._nm.active_vpns()
+            self._vpn_checked = now
+        return self._vpn_cache
 
     def write(self) -> str:
         """Write the current snapshot now, whatever the rate limit says."""
@@ -149,12 +172,20 @@ class Daemon:
         live = self.refresh()
         live_windows = live.snapshot.windows if live is not None else []
         monitors = [m.connector for m in (live.snapshot.monitors if live else []) if m.connector]
-        return build_plan(
+        plan = build_plan(
             saved,
             live_windows,
             available_monitors=monitors,
             command_policy=self.config.command_policy,
         )
+        saved_vpns = [VpnConnection.from_json(raw) for raw in saved.extra.get("vpn", [])]
+        if saved_vpns and self._nm is not None:
+            plan.vpn = plan_vpn(
+                saved_vpns,
+                [connection.uuid for connection in self._nm.active_vpns()],
+                self._nm.known_uuids(),
+            )
+        return plan
 
     def handle_plan_restore(self) -> str:
         plan = self.build_restore_plan()
@@ -168,7 +199,7 @@ class Daemon:
             plan.actions = [a for i, a in enumerate(plan.actions) if i in chosen]
         if self.core is None:
             raise RuntimeError("the compositor-side core is not running; is the extension enabled?")
-        result = execute(plan, self.core)
+        result = execute(plan, self.core, network_manager=self._nm)
         return json.dumps(
             {
                 "results": [
@@ -179,6 +210,10 @@ class Daemon:
                         "kind": r.action.kind,
                     }
                     for r in result.results
+                ],
+                "vpn": [
+                    {"name": name, "state": state, "detail": detail}
+                    for name, state, detail in result.vpn
                 ],
                 "workspaces": result.workspaces_after,
             }
@@ -220,6 +255,14 @@ def _plan_to_json(plan: RestorePlan) -> dict:
             for match in plan.ambiguous
         ],
         "untouched": [{"title": w.title, "wm_class": w.wm_class} for w in plan.untouched],
+        "vpn": [
+            {"name": a.connection.name, "kind": a.kind, "description": a.describe()}
+            for a in plan.vpn.actions
+        ]
+        + [
+            {"name": c.name, "kind": "missing", "description": f"{c.name} is unknown here"}
+            for c in plan.vpn.missing
+        ],
     }
 
 
@@ -247,7 +290,12 @@ def run() -> int:
             f"restore-wss: the compositor-side core is not reachable yet ({error}); waiting for it."
         )
 
-    daemon = Daemon(core=core)
+    network_manager = NetworkManager()
+    if not network_manager.available():
+        print("restore-wss: NetworkManager is not reachable; VPNs will not be captured.")
+        network_manager = None
+
+    daemon = Daemon(core=core, network_manager=network_manager)
     service = DaemonService(daemon)
 
     loop = GLib.MainLoop()

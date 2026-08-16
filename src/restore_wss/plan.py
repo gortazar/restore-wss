@@ -17,6 +17,7 @@ from .documents import Document
 from .matcher import Match, match_windows
 from .model import Rect, Snapshot, Window
 from .policy import Decision
+from .vpn import VpnPlan
 
 #: What an action does.
 PLACE = "place"  # the window is already open: move it to where it was
@@ -131,6 +132,9 @@ class RestorePlan:
     ambiguous: list[Match] = field(default_factory=list)
     #: Live windows the snapshot knows nothing about. Never touched — restore adds, never removes.
     untouched: list[Window] = field(default_factory=list)
+    #: What to do about the VPNs that were up (``vpn.py``). Separate from the window actions
+    #: because it is a different kind of thing to confirm.
+    vpn: VpnPlan = field(default_factory=VpnPlan)
 
     @property
     def is_empty(self) -> bool:
@@ -138,6 +142,7 @@ class RestorePlan:
 
     def describe(self) -> list[str]:
         lines = [action.describe() for action in self.actions]
+        lines += self.vpn.describe()
         lines += [f"skip  {window.title or window.wm_class}: {why}" for window, why in self.skipped]
         for match in self.ambiguous:
             lines.append(

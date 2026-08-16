@@ -136,6 +136,8 @@ def print_plan(plan: dict, out: TextIO) -> None:
             f"(score {entry['score']:.2f}) — too close to call, left alone",
             file=out,
         )
+    for entry in plan.get("vpn", []):
+        print(f"   {entry['description']}", file=out)
     untouched = plan.get("untouched", [])
     if untouched:
         names = ", ".join(w["title"] or w["wm_class"] for w in untouched[:4])
@@ -160,7 +162,7 @@ def _restore(args, client_factory=None, confirm=None) -> int:
         return 0
 
     print_plan(plan, sys.stdout)
-    if not plan.get("actions"):
+    if not plan.get("actions") and not plan.get("vpn"):
         return 0
     if args.dry_run:
         print("\n--dry-run: nothing was changed.")
@@ -178,6 +180,8 @@ def _restore(args, client_factory=None, confirm=None) -> int:
     for entry in result.get("results", []):
         detail = f" — {entry['detail']}" if entry.get("detail") else ""
         print(f"{entry['state']:>7}  {entry['description']}{detail}")
+    for entry in result.get("vpn", []):
+        print(f"{entry['state']:>7}  vpn {entry['name']} — {entry['detail']}")
     failures = [r for r in result.get("results", []) if r["state"] != "done"]
     return 1 if failures else 0
 
