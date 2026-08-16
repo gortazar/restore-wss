@@ -1,0 +1,9 @@
+{
+  "uuid": "session-core@restore-wss.patxi",
+  "name": "Session Core (restore-wss)",
+  "description": "Observes and places windows on behalf of restore-wss. Exports org.gnome.SessionCore on the session bus; all state, policy and disk I/O live in the daemon, outside the compositor.",
+  "shell-version": ["45", "46", "47", "48"],
+  "url": "https://github.com/gortazar/restore-wss",
+  "version-name": "0.1.0",
+  "session-modes": ["user", "unlock-dialog"]
+}

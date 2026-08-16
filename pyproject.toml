@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "restore-wss"
+version = "0.1.0"
+description = "Put the GNOME workspaces back the way they were"
+requires-python = ">=3.11"
+license = { text = "GPL-2.0-or-later" }
+# PyGObject is a hard runtime dependency (GLib main loop, Gio D-Bus, NetworkManager later) but is
+# not listed here: it is not installable from PyPI in any useful way on this platform, and every
+# supported install path — nix develop, the .deb, the installer — provides the distribution's own
+# python3-gi. The daemon checks for it at startup and says so plainly if it is missing.
+dependencies = []
+
+[project.scripts]
+restore-wss = "restore_wss.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]

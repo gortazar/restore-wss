@@ -110,7 +110,20 @@ EOF
     #
     # Our own dbus-daemon rather than dbus-run-session, because the address has to be
     # predictable: other processes (the probe harness, the daemon, gsettings) join this bus later.
-    dbus-daemon --session --address="unix:path=$BUS_PATH" --print-pid --fork \
+    # Inside `nix develop` the dbus on PATH comes from nixpkgs and looks for
+    # /etc/dbus-1/session.conf, which does not exist on this host — so name its own copy
+    # explicitly rather than relying on the compiled-in path.
+    local dbus_config=""
+    local dbus_prefix
+    dbus_prefix="$(dirname "$(dirname "$(readlink -f "$(command -v dbus-daemon)")")")"
+    for candidate in "$dbus_prefix/share/dbus-1/session.conf" /usr/share/dbus-1/session.conf \
+        /etc/dbus-1/session.conf; do
+        [[ -f "$candidate" ]] && dbus_config="$candidate" && break
+    done
+    [[ -n "$dbus_config" ]] || die "no dbus session.conf found for $(command -v dbus-daemon)"
+
+    dbus-daemon --config-file="$dbus_config" \
+        --address="unix:path=$BUS_PATH" --print-pid --fork \
         >"$STATE/dbus.pid" 2>"$STATE/dbus.err" ||
         die "failed to start dbus-daemon: $(cat "$STATE/dbus.err")"
 
