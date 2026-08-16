@@ -59,9 +59,12 @@
             export XDG_RUNTIME_DIR=$(mktemp -d)
             export HOME=$(mktemp -d)
             export PYTHONPATH=$PWD/src
-            # The nix dbus looks for /etc/dbus-1/session.conf, which does not exist in the build
-            # sandbox; the wrapper points it at the copy shipped next to the binary.
-            tools/with-session-bus.sh python -m pytest tests/dbus -q | tee "$out"
+            # Two sandbox facts, both learned from a failed CI run:
+            #   * the nix dbus looks for /etc/dbus-1/session.conf, which does not exist here — the
+            #     wrapper points it at the copy shipped next to the binary;
+            #   * there is no /usr/bin/env in the sandbox, so the script's shebang cannot be used
+            #     and bash is invoked explicitly.
+            bash tools/with-session-bus.sh python -m pytest tests/dbus -q | tee "$out"
           '';
 
           lint = pkgs.runCommand "restore-wss-lint"
