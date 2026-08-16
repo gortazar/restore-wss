@@ -50,6 +50,10 @@ class DaemonService:
                 reply = self._daemon.handle_get_snapshot()
             elif method == "Save":
                 reply = self._daemon.handle_save()
+            elif method == "PlanRestore":
+                reply = self._daemon.handle_plan_restore()
+            elif method == "Restore":
+                reply = self._daemon.handle_restore(parameters.unpack()[0])
             else:
                 invocation.return_error_literal(
                     Gio.DBusError.quark(), Gio.DBusError.UNKNOWN_METHOD, f"no method {method}"

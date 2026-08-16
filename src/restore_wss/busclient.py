@@ -59,6 +59,33 @@ class ShellCoreClient:
     def get_layout(self) -> str:
         return self._call("GetLayout", "()", ())
 
+    def ensure_workspaces(self, count: int) -> int:
+        from gi.repository import GLib
+
+        result = self._proxy.call_sync(
+            "EnsureWorkspaces", GLib.Variant("(u)", (count,)), 0, CALL_TIMEOUT_MS, None
+        )
+        return result.unpack()[0]
+
+    def activate_workspace(self, index: int) -> None:
+        from gi.repository import GLib
+
+        self._proxy.call_sync(
+            "ActivateWorkspace", GLib.Variant("(u)", (index,)), 0, CALL_TIMEOUT_MS, None
+        )
+
+    def place_window(self, window_id: str, placement_json: str) -> str:
+        return self._call("PlaceWindow", "(ss)", (window_id, placement_json))
+
+    def placement_verdict(self, window_id: str, requested_json: str) -> str:
+        return self._call("GetPlacementVerdict", "(ss)", (window_id, requested_json))
+
+    def launch_app(self, desktop_id: str, uris_json: str, placement_json: str) -> str:
+        return self._call("LaunchApp", "(sss)", (desktop_id, uris_json, placement_json))
+
+    def get_launch_report(self, launch_id: str) -> str:
+        return self._call("GetLaunchReport", "(s)", (launch_id,))
+
     def connect_windows_changed(self, callback) -> int:
         """Subscribe to the coalesced change signal. Returns the handler id."""
 
@@ -101,6 +128,16 @@ class DaemonClient:
 
     def save(self) -> str:
         return self._call("Save", "()", ())
+
+    def plan_restore(self) -> dict:
+        import json
+
+        return json.loads(self._call("PlanRestore", "()", ()))
+
+    def restore(self, only: list[int] | None = None) -> dict:
+        import json
+
+        return json.loads(self._call("Restore", "(s)", (json.dumps(only or []),)))
 
     def _call(self, method: str, signature: str, args: tuple) -> str:
         from gi.repository import GLib

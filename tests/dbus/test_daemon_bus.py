@@ -174,3 +174,70 @@ def test_the_previous_generation_is_kept_alongside(daemon, tmp_path):
     assert (state / "session.prev.json").exists()
     assert json.loads((state / "session.json").read_text())["windows"] == []
     assert json.loads((state / "session.prev.json").read_text())["windows"]
+
+
+def _core_activity() -> dict:
+    reply = _bus().call_sync(
+        SHELL_NAME,
+        SHELL_OBJECT_PATH,
+        TEST_INTERFACE,
+        "GetActivity",
+        None,
+        GLib.VariantType("(s)"),
+        Gio.DBusCallFlags.NONE,
+        5000,
+        None,
+    )
+    return json.loads(reply.unpack()[0])
+
+
+def test_planning_a_restore_of_the_snapshot_on_disk(daemon):
+    """The plan is computed against the snapshot on disk, not the live one: after a reboot the
+    live desktop is empty and the file is the only record of what was lost."""
+    DaemonClient().save()  # the terminal window the fake core reports is now "the session"
+    _core_control("SetWindows", "[]")  # ... and now the desktop is empty, as after a reboot
+
+    plan = DaemonClient().plan_restore()
+    assert [a["kind"] for a in plan["actions"]] == ["launch"]
+    assert plan["actions"][0]["app_id"] == "org.gnome.Terminal.desktop"
+    assert plan["actions"][0]["placement"]["workspace"] == 0
+
+
+def test_restoring_launches_what_is_missing(daemon):
+    DaemonClient().save()
+    _core_control("SetWindows", "[]")
+
+    result = DaemonClient().restore()
+    assert [r["state"] for r in result["results"]] == ["done"]
+
+    activity = _core_activity()
+    assert activity["launched"][0][0] == "org.gnome.Terminal.desktop"
+    assert activity["workspaces"] >= 1
+
+
+def test_restoring_when_the_window_is_already_open_moves_it_instead(daemon):
+    """Idempotency over the bus: the same window, still open, is moved rather than launched."""
+    DaemonClient().save()
+    moved = json.dumps(
+        [
+            {
+                "id": "1",
+                "wm_class": "Gnome-terminal",
+                "title": "patxi@host: ~/git/my-repo",
+                "app_id": "org.gnome.Terminal.desktop",
+                "pid": 4242,
+                "workspace": 1,
+                "monitor": 0,
+                "frame": {"x": 0, "y": 0, "width": 400, "height": 300},
+            }
+        ]
+    )
+    _core_control("SetWindows", moved)
+
+    result = DaemonClient().restore()
+    assert [r["state"] for r in result["results"]] == ["done"]
+    activity = _core_activity()
+    assert not activity["launched"]
+    window_id, placement = activity["placed"][0]
+    assert window_id == "1"
+    assert placement["workspace"] == 0  # back to where the snapshot remembers it

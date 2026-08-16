@@ -1,12 +1,13 @@
 // org.gnome.SessionCore — the compositor-side service.
 //
-// It answers two questions ("what windows are there", "what does the desktop look like") and
-// raises one signal ("something changed"). That is the whole of it, on purpose: this code runs
-// inside gnome-shell, where a stall freezes the desktop and an exception can take the session
-// down, so it holds no state worth losing, writes no files and spawns no processes.
+// It observes (ListWindows, GetLayout, the WindowsChanged signal) and it acts on instructions
+// (EnsureWorkspaces, PlaceWindow, LaunchApp). What it does not do is decide anything: no policy,
+// no state worth losing, no files, no processes of its own. This code runs inside gnome-shell,
+// where a stall freezes the desktop and an exception can take the session down, so everything
+// that can live in the daemon does.
 //
-// Placement and launching arrive in M3; they belong here too, because only in-process code can do
-// them, and they will be the same shape — a request in, an answer out, no policy.
+// That split is also what makes this half reusable: the interface is about windows and monitors,
+// not about restoring a session after a reboot (see docs/shared-core.md).
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -20,6 +21,13 @@ import {
     SHELL_OBJECT_PATH,
 } from './protocol.js';
 import { MonitorConnectors, describeWorkspaces } from './monitors.js';
+import {
+    Launcher,
+    ensureWorkspaces,
+    findWindow,
+    placeWindow,
+    placementVerdict,
+} from './placement.js';
 import { introspectAllWindows } from './windowIntrospect.js';
 
 // Dragging a window emits position-changed continuously. One D-Bus message per motion event would
@@ -33,12 +41,14 @@ export class SessionCore {
         this._ownerId = 0;
         this._debounceId = 0;
         this._monitors = null;
+        this._launcher = null;
         this._signalIds = [];
         this._windowSignals = new Map();
     }
 
     enable() {
         this._monitors = new MonitorConnectors();
+        this._launcher = new Launcher(this._monitors);
         this._impl.export(Gio.DBus.session, SHELL_OBJECT_PATH);
         this._ownerId = Gio.bus_own_name(
             Gio.BusType.SESSION, SHELL_NAME, Gio.BusNameOwnerFlags.REPLACE, null, null,
@@ -57,6 +67,8 @@ export class SessionCore {
             this._ownerId = 0;
         }
         this._impl.unexport();
+        this._launcher?.destroy();
+        this._launcher = null;
         this._monitors?.destroy();
         this._monitors = null;
     }
@@ -83,6 +95,38 @@ export class SessionCore {
             ...describeWorkspaces(),
             monitors: this._monitors?.describe() ?? [],
         });
+    }
+
+    EnsureWorkspaces(count) {
+        return ensureWorkspaces(count);
+    }
+
+    ActivateWorkspace(index) {
+        const workspace = global.workspace_manager.get_workspace_by_index(index);
+        workspace?.activate(global.get_current_time());
+    }
+
+    PlaceWindow(windowId, placementJson) {
+        const window = findWindow(windowId);
+        if (!window)
+            throw new Error(`no window ${windowId}`);
+        const requested = placeWindow(window, JSON.parse(placementJson), this._monitors);
+        return JSON.stringify(requested);
+    }
+
+    GetPlacementVerdict(windowId, requestedJson) {
+        const requested = requestedJson ? JSON.parse(requestedJson) : {};
+        return JSON.stringify(placementVerdict(findWindow(windowId), requested));
+    }
+
+    LaunchApp(desktopId, urisJson, placementJson) {
+        const uris = urisJson ? JSON.parse(urisJson) : [];
+        const placement = placementJson ? JSON.parse(placementJson) : {};
+        return this._launcher.launch(desktopId, uris, placement);
+    }
+
+    GetLaunchReport(launchId) {
+        return JSON.stringify(this._launcher.report(launchId));
     }
 
     // --- change tracking ----------------------------------------------------------------

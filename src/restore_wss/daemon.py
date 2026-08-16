@@ -15,13 +15,16 @@ The daemon owns all the state and does all the I/O, because the other half of th
 
 from __future__ import annotations
 
+import json
 import time
 
 from .busclient import ShellCoreClient
 from .capture import CaptureResult, capture, read_boot_id
 from .cli import VERSION
 from .model import Snapshot
+from .plan import RestorePlan, build_plan
 from .protocol import API_VERSION, DAEMON_NAME, DAEMON_OBJECT_PATH
+from .restore import execute
 from .storage import SnapshotStore, default_state_dir
 
 #: How long to wait after the last change before writing. Long enough that a window drag is one
@@ -116,6 +119,86 @@ class Daemon:
     def handle_save(self) -> str:
         self.refresh()
         return self.write()
+
+    # --- restore -------------------------------------------------------------------------
+
+    def build_restore_plan(self) -> RestorePlan:
+        """What restoring the snapshot *on disk* would do to the desktop as it is now.
+
+        On disk, not in memory: after a reboot the in-memory snapshot describes the empty desktop
+        the daemon started against, and restoring that would be a very efficient way of doing
+        nothing.
+        """
+        saved = self.store.load() or Snapshot()
+        live = self.refresh()
+        live_windows = live.snapshot.windows if live is not None else []
+        monitors = [m.connector for m in (live.snapshot.monitors if live else []) if m.connector]
+        return build_plan(saved, live_windows, available_monitors=monitors)
+
+    def handle_plan_restore(self) -> str:
+        plan = self.build_restore_plan()
+        return json.dumps(_plan_to_json(plan))
+
+    def handle_restore(self, only_json: str) -> str:
+        plan = self.build_restore_plan()
+        only = json.loads(only_json) if only_json else []
+        if only:
+            chosen = {int(index) for index in only}
+            plan.actions = [a for i, a in enumerate(plan.actions) if i in chosen]
+        if self.core is None:
+            raise RuntimeError("the compositor-side core is not running; is the extension enabled?")
+        result = execute(plan, self.core)
+        return json.dumps(
+            {
+                "results": [
+                    {
+                        "state": r.state,
+                        "detail": r.detail,
+                        "description": r.action.describe(),
+                        "kind": r.action.kind,
+                    }
+                    for r in result.results
+                ],
+                "workspaces": result.workspaces_after,
+            }
+        )
+
+
+def _plan_to_json(plan: RestorePlan) -> dict:
+    return {
+        "workspace_count": plan.workspace_count,
+        "active_workspace": plan.active_workspace,
+        "actions": [
+            {
+                "index": index,
+                "kind": action.kind,
+                "app_id": action.app_id,
+                "window_id": action.window_id,
+                "title": action.saved.title,
+                "wm_class": action.saved.wm_class,
+                "uris": action.uris,
+                "placement": action.placement.to_json(),
+                "reason": action.reason,
+                "confidence": action.confidence,
+                "description": action.describe(),
+            }
+            for index, action in enumerate(plan.actions)
+        ],
+        "skipped": [
+            {"title": window.title, "wm_class": window.wm_class, "reason": reason}
+            for window, reason in plan.skipped
+        ],
+        "ambiguous": [
+            {
+                "title": match.saved.title,
+                "candidate": match.candidate.title,
+                "window_id": match.candidate.id,
+                "score": match.score,
+            }
+            for match in plan.ambiguous
+        ],
+        "untouched": [{"title": w.title, "wm_class": w.wm_class} for w in plan.untouched],
+    }
 
 
 def run() -> int:

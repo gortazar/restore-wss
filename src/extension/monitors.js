@@ -36,6 +36,15 @@ export class MonitorConnectors {
         return this._byIndex.get(index)?.connector ?? '';
     }
 
+    /** The Meta monitor index a connector is on, or undefined if it is not plugged in now. */
+    indexFor(connector) {
+        for (const [index, identity] of this._byIndex) {
+            if (identity.connector === connector)
+                return index;
+        }
+        return undefined;
+    }
+
     /** The layout the daemon stores: one entry per monitor, in Meta index order. */
     describe() {
         return Main.layoutManager.monitors.map((monitor, index) => {

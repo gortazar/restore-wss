@@ -40,6 +40,8 @@ TEST_IFACE_XML = f"""
   <interface name="{TEST_INTERFACE}">
     <method name="SetWindows"><arg type="s" name="json" direction="in"/></method>
     <method name="EmitChanged"/>
+    <!-- What the daemon asked the compositor to do: placements, launches, workspace count. -->
+    <method name="GetActivity"><arg type="s" name="json" direction="out"/></method>
     <method name="Quit"/>
   </interface>
 </node>
@@ -84,6 +86,11 @@ class FakeCore:
         self.windows = DEFAULT_WINDOWS if windows is None else windows
         self.layout = DEFAULT_LAYOUT if layout is None else layout
         self.version = version
+        # Restore-side bookkeeping, readable by the test through org.gnome.SessionCore.Test.
+        self.placed = []
+        self.launched = []
+        self.workspaces = self.layout.get("workspace_count", 1)
+        self.activated = -1
         self.loop = GLib.MainLoop()
         self._connection = None
         self._ids: list[int] = []
@@ -118,7 +125,31 @@ class FakeCore:
         elif method == "ListWindows":
             reply = json.dumps(self.windows)
         elif method == "GetLayout":
-            reply = json.dumps(self.layout)
+            reply = json.dumps({**self.layout, "workspace_count": self.workspaces})
+        elif method == "EnsureWorkspaces":
+            self.workspaces = max(self.workspaces, parameters.unpack()[0])
+            invocation.return_value(GLib.Variant("(u)", (self.workspaces,)))
+            return
+        elif method == "ActivateWorkspace":
+            self.activated = parameters.unpack()[0]
+            invocation.return_value(None)
+            return
+        elif method == "PlaceWindow":
+            window_id, placement = parameters.unpack()
+            self.placed.append((window_id, json.loads(placement)))
+            reply = json.dumps({"window_id": window_id})
+        elif method == "GetPlacementVerdict":
+            reply = json.dumps({"state": "applied"})
+        elif method == "LaunchApp":
+            desktop_id, uris, placement = parameters.unpack()
+            self.launched.append((desktop_id, json.loads(uris), json.loads(placement)))
+            reply = f"launch-{len(self.launched)}"
+        elif method == "GetLaunchReport":
+            # The fake compositor is instant and always succeeds; the failure paths are unit
+            # tested against a fake in tests/unit/test_restore.py.
+            reply = json.dumps(
+                {"state": "placed", "strategy": "app-id-and-timing", "window_id": "new"}
+            )
         else:
             invocation.return_error_literal(
                 Gio.DBusError.quark(), Gio.DBusError.UNKNOWN_METHOD, method
@@ -129,6 +160,23 @@ class FakeCore:
     def _on_test_call(self, _conn, _sender, _path, _iface, method, parameters, invocation):
         if method == "SetWindows":
             self.windows = json.loads(parameters.unpack()[0])
+        elif method == "GetActivity":
+            invocation.return_value(
+                GLib.Variant(
+                    "(s)",
+                    (
+                        json.dumps(
+                            {
+                                "placed": self.placed,
+                                "launched": self.launched,
+                                "workspaces": self.workspaces,
+                                "activated": self.activated,
+                            }
+                        ),
+                    ),
+                )
+            )
+            return
         elif method == "EmitChanged":
             self._connection.emit_signal(
                 None, SHELL_OBJECT_PATH, SHELL_INTERFACE, "WindowsChanged", None

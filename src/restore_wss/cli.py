@@ -115,6 +115,73 @@ def _print_status(source: SnapshotSource, out: TextIO) -> None:
     )
 
 
+def print_plan(plan: dict, out: TextIO) -> None:
+    """The review text: what restore is about to do, and what it will not do."""
+    actions = plan.get("actions", [])
+    if not actions:
+        print("Nothing to restore: the snapshot matches what is already open.", file=out)
+    else:
+        needed = plan.get("workspace_count", 0)
+        print(f"Restoring {len(actions)} window(s) across {needed} workspace(s):", file=out)
+        for action in actions:
+            confidence = action.get("confidence", 1.0)
+            marker = " " if confidence >= 0.9 else "?"
+            print(f" {marker} [{action['index']}] {action['description']}", file=out)
+
+    for entry in plan.get("skipped", []):
+        print(f"   skip  {entry['title'] or entry['wm_class']}: {entry['reason']}", file=out)
+    for entry in plan.get("ambiguous", []):
+        print(
+            f"   ask   {entry['title']}: could be {entry['candidate']!r} "
+            f"(score {entry['score']:.2f}) — too close to call, left alone",
+            file=out,
+        )
+    untouched = plan.get("untouched", [])
+    if untouched:
+        names = ", ".join(w["title"] or w["wm_class"] for w in untouched[:4])
+        more = "" if len(untouched) <= 4 else f" and {len(untouched) - 4} more"
+        print(f"   leaving alone: {names}{more}", file=out)
+
+
+def _restore(args, client_factory=None, confirm=None) -> int:
+    try:
+        from .busclient import DaemonClient  # imported late: needs PyGObject
+
+        client = (client_factory or DaemonClient)()
+        plan = client.plan_restore()
+    except Exception as error:  # noqa: BLE001
+        print(f"restore-wss: cannot reach the daemon ({error}). Is restore-wss-daemon running?")
+        return 1
+
+    if args.json:
+        import json as _json
+
+        print(_json.dumps(plan, indent=2))
+        return 0
+
+    print_plan(plan, sys.stdout)
+    if not plan.get("actions"):
+        return 0
+    if args.dry_run:
+        print("\n--dry-run: nothing was changed.")
+        return 0
+
+    if not args.yes:
+        # Unattended restore is a flag, not the default: this launches a dozen applications.
+        ask = confirm or (lambda: input("\nRestore these? [y/N] ").strip().lower())
+        if ask() not in ("y", "yes"):
+            print("Nothing was changed.")
+            return 0
+
+    result = client.restore()
+    print()
+    for entry in result.get("results", []):
+        detail = f" — {entry['detail']}" if entry.get("detail") else ""
+        print(f"{entry['state']:>7}  {entry['description']}{detail}")
+    failures = [r for r in result.get("results", []) if r["state"] != "done"]
+    return 1 if failures else 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="restore-wss", description=__doc__)
     parser.add_argument("--version", action="store_true", help="print the version and exit")
@@ -123,12 +190,26 @@ def _build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="what is currently captured")
     status.add_argument("--json", action="store_true", help="print the snapshot as JSON")
 
+    restore = sub.add_parser("restore", help="put the workspaces back")
+    restore.add_argument("--dry-run", action="store_true", help="print the plan and stop")
+    restore.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    restore.add_argument("--json", action="store_true", help="print the plan as JSON and stop")
+
     sub.add_parser("daemon", help="run the capture loop (normally a systemd user unit)")
     return parser
 
 
-def main(argv: list[str] | None = None, source: SnapshotSource | None = None) -> int:
-    """Entry point. ``source`` is injectable so the output can be tested without a bus."""
+def main(
+    argv: list[str] | None = None,
+    source: SnapshotSource | None = None,
+    client_factory=None,
+    confirm=None,
+) -> int:
+    """Entry point.
+
+    ``source``, ``client_factory`` and ``confirm`` are injectable so that every line this prints
+    can be tested without a bus, a compositor or a terminal to type into.
+    """
     parser = _build_parser()
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -144,6 +225,9 @@ def main(argv: list[str] | None = None, source: SnapshotSource | None = None) ->
             return 0
         _print_status(resolved, sys.stdout)
         return 0
+
+    if args.command == "restore":
+        return _restore(args, client_factory=client_factory, confirm=confirm)
 
     if args.command == "daemon":
         from .daemon import run  # imported late: needs PyGObject
