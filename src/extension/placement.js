@@ -179,6 +179,35 @@ export class Launcher {
         this._pending.clear();
     }
 
+    /**
+     * Register a placement for a window that something else is about to start.
+     *
+     * The daemon starts terminals itself, because a terminal needs a working directory and a
+     * command on its command line and a desktop file cannot express either. The matching and the
+     * report are the same as for launch(); only the spawning is somebody else's job — which is
+     * the whole point, since that somebody is not inside the compositor.
+     */
+    expect(desktopId, placement) {
+        const launchId = `expect-${this._nextId++}`;
+        const record = {
+            state: 'waiting',
+            desktopId,
+            placement,
+            startedAt: GLib.get_monotonic_time(),
+            strategy: '',
+        };
+        this._pending.set(launchId, record);
+        record.timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, LAUNCH_TIMEOUT_MS, () => {
+            record.timeoutId = 0;
+            if (record.state === 'waiting') {
+                record.state = 'timeout';
+                record.error = `no window appeared within ${LAUNCH_TIMEOUT_MS / 1000} s`;
+            }
+            return GLib.SOURCE_REMOVE;
+        });
+        return launchId;
+    }
+
     launch(desktopId, uris, placement) {
         const launchId = `launch-${this._nextId++}`;
         const appSystem = Shell.AppSystem.get_default();

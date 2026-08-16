@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import contextlib
 import json
+import subprocess
 import time
 from dataclasses import dataclass, field
 
-from .plan import LAUNCH, PLACE, Action, RestorePlan
+from .plan import LAUNCH, PLACE, TERMINAL, Action, RestorePlan
+from .terminalcmd import terminal_argv
 
 
 @dataclass
@@ -44,12 +46,30 @@ class RestoreResult:
         return [r.describe() for r in self.results]
 
 
+def _spawn(argv: list[str]) -> None:
+    """Start a process, detached, with **no shell**.
+
+    argv, never a string through a shell: a captured command line is untrusted input, and a shell
+    would interpret whatever is in it. Pipes, redirections and `&&` in a captured command arrive
+    here as literal arguments and do nothing, which is the intended behaviour rather than a
+    limitation to work around.
+    """
+    subprocess.Popen(  # noqa: S603 — argv, no shell, and every element came from /proc as argv
+        argv,
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def execute(
     plan: RestorePlan,
     core,
     *,
     wait_seconds: float = 20.0,
     sleep=time.sleep,
+    spawn=_spawn,
 ) -> RestoreResult:
     """Run ``plan`` against a ``ShellCoreClient``-shaped object.
 
@@ -70,6 +90,19 @@ def execute(
                 core.place_window(action.window_id, json.dumps(action.placement.to_json()))
                 result.results.append(ActionResult(action, "done"))
             except Exception as error:  # noqa: BLE001 — one bad window must not stop the restore
+                result.results.append(ActionResult(action, "failed", str(error)))
+        elif action.kind == TERMINAL:
+            try:
+                # The extension is told to expect the window, then the daemon starts the process
+                # itself: a terminal needs a working directory and a command on its command line,
+                # and spawning belongs outside the compositor in any case.
+                launch_id = core.expect_window(
+                    action.app_id, json.dumps(action.placement.to_json())
+                )
+                argv = terminal_argv(action.app_id, action.tabs)
+                spawn(argv)
+                pending.append((action, launch_id))
+            except Exception as error:  # noqa: BLE001
                 result.results.append(ActionResult(action, "failed", str(error)))
         elif action.kind == LAUNCH:
             try:

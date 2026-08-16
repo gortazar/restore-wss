@@ -125,6 +125,11 @@ export class SessionCore {
         return this._launcher.launch(desktopId, uris, placement);
     }
 
+    ExpectWindow(desktopId, placementJson) {
+        const placement = placementJson ? JSON.parse(placementJson) : {};
+        return this._launcher.expect(desktopId, placement);
+    }
+
     GetLaunchReport(launchId) {
         return JSON.stringify(this._launcher.report(launchId));
     }

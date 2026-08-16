@@ -145,6 +145,16 @@ SHELL_IFACE_XML = f"""
       <arg type="s" name="launch_id" direction="out"/>
     </method>
 
+    <!-- Register a placement for a window that is *about* to appear, without launching anything.
+         The daemon uses this when it starts a process itself — a terminal, which has to be given
+         a working directory and a command on its command line, neither of which a desktop file
+         can express. Same matching, same report, no spawning inside the compositor. -->
+    <method name="ExpectWindow">
+      <arg type="s" name="desktop_id" direction="in"/>
+      <arg type="s" name="placement_json" direction="in"/>
+      <arg type="s" name="launch_id" direction="out"/>
+    </method>
+
     <method name="GetLaunchReport">
       <arg type="s" name="launch_id" direction="in"/>
       <arg type="s" name="report_json" direction="out"/>

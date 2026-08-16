@@ -19,8 +19,9 @@ import json
 import time
 
 from .busclient import ShellCoreClient
-from .capture import CaptureResult, capture, read_boot_id
+from .capture import CaptureResult, apply_exclusions, capture, enrich_terminals, read_boot_id
 from .cli import VERSION
+from .config import Config, load_config
 from .model import Snapshot
 from .plan import RestorePlan, build_plan
 from .protocol import API_VERSION, DAEMON_NAME, DAEMON_OBJECT_PATH
@@ -43,11 +44,13 @@ class Daemon:
         store: SnapshotStore | None = None,
         core: ShellCoreClient | None = None,
         *,
+        config: Config | None = None,
         clock=time.monotonic,
         wall_clock=time.time,
     ):
         self.store = store if store is not None else SnapshotStore(default_state_dir())
         self.core = core
+        self.config = config if config is not None else load_config()
         self._clock = clock
         self._wall_clock = wall_clock
         self._boot_id = read_boot_id()
@@ -73,12 +76,17 @@ class Daemon:
         """Re-read the compositor and update the in-memory snapshot. No disk I/O."""
         if not self.core_available:
             return None
+        if self.config.paused:
+            # Paused means paused: no window list, no process trees, no writes.
+            return None
         result = capture(
             self.core.list_windows(),
             self.core.get_layout(),
             captured_at=self._wall_clock(),
             boot_id=self._boot_id,
         )
+        apply_exclusions(result, self.config)
+        enrich_terminals(result, self.config)
         self._snapshot = result.snapshot
         self._skipped = result.skipped
         return result
@@ -133,7 +141,12 @@ class Daemon:
         live = self.refresh()
         live_windows = live.snapshot.windows if live is not None else []
         monitors = [m.connector for m in (live.snapshot.monitors if live else []) if m.connector]
-        return build_plan(saved, live_windows, available_monitors=monitors)
+        return build_plan(
+            saved,
+            live_windows,
+            available_monitors=monitors,
+            command_policy=self.config.command_policy,
+        )
 
     def handle_plan_restore(self) -> str:
         plan = self.build_restore_plan()
@@ -178,6 +191,7 @@ def _plan_to_json(plan: RestorePlan) -> dict:
                 "wm_class": action.saved.wm_class,
                 "uris": action.uris,
                 "placement": action.placement.to_json(),
+                "tabs": [tab.to_json() for tab in action.tabs],
                 "reason": action.reason,
                 "confidence": action.confidence,
                 "description": action.describe(),

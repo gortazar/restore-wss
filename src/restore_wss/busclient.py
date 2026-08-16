@@ -83,6 +83,9 @@ class ShellCoreClient:
     def launch_app(self, desktop_id: str, uris_json: str, placement_json: str) -> str:
         return self._call("LaunchApp", "(sss)", (desktop_id, uris_json, placement_json))
 
+    def expect_window(self, desktop_id: str, placement_json: str) -> str:
+        return self._call("ExpectWindow", "(ss)", (desktop_id, placement_json))
+
     def get_launch_report(self, launch_id: str) -> str:
         return self._call("GetLaunchReport", "(s)", (launch_id,))
 

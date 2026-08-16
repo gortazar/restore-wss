@@ -15,10 +15,12 @@ from typing import Any
 
 from .matcher import Match, match_windows
 from .model import Rect, Snapshot, Window
+from .policy import Decision
 
 #: What an action does.
 PLACE = "place"  # the window is already open: move it to where it was
 LAUNCH = "launch"  # nothing like it is running: start the application
+TERMINAL = "terminal"  # a terminal window: reopen it at its directories, per the command policy
 
 
 @dataclass
@@ -54,6 +56,35 @@ class Placement:
 
 
 @dataclass
+class TabPlan:
+    """One tab of a terminal that is about to be reopened."""
+
+    cwd: str = ""
+    command: list[str] = field(default_factory=list)
+    #: Whether the command will be re-run, and the policy's reason either way.
+    run_command: bool = False
+    reason: str = ""
+    redacted: bool = False
+
+    def describe(self) -> str:
+        where = self.cwd or "~"
+        if not self.command:
+            return f"shell in {where}"
+        if self.run_command:
+            return f"{' '.join(self.command)} in {where}"
+        return f"shell in {where} (not re-running {self.command[0]}: {self.reason})"
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "cwd": self.cwd,
+            "command": self.command,
+            "run_command": self.run_command,
+            "reason": self.reason,
+            "redacted": self.redacted,
+        }
+
+
+@dataclass
 class Action:
     kind: str
     saved: Window
@@ -67,6 +98,8 @@ class Action:
     reason: str = ""
     #: 0.0–1.0. Low-confidence actions are what the review step un-ticks by default.
     confidence: float = 1.0
+    #: For ``terminal``: one entry per tab that will be reopened.
+    tabs: list[TabPlan] = field(default_factory=list)
 
     def describe(self) -> str:
         where = []
@@ -78,6 +111,9 @@ class Action:
         name = self.saved.title or self.saved.wm_class or self.app_id or "(unnamed)"
         if self.kind == PLACE:
             return f"move  {name} → {target} ({self.reason})"
+        if self.kind == TERMINAL:
+            tabs = "; ".join(tab.describe() for tab in self.tabs) or "an empty terminal"
+            return f"start terminal → {target}: {tabs}"
         return f"start {self.app_id or self.saved.wm_class} for {name} → {target}"
 
 
@@ -137,11 +173,41 @@ def _placement_for(window: Window, snapshot: Snapshot) -> Placement:
     )
 
 
+def _tab_plans(window: Window, policy) -> list[TabPlan]:
+    """Turn a captured terminal block into what restore would do with it.
+
+    Every tab is reopened at its working directory — that part is not in question. What the policy
+    decides is only whether the command is *re-run*, and the reason is carried through so the
+    review step can show it.
+    """
+    block = window.extra.get("terminal") or {}
+    plans: list[TabPlan] = []
+    for raw in block.get("tabs", []):
+        command = [str(a) for a in raw.get("command", [])]
+        redacted = bool(raw.get("redacted"))
+        decision = (
+            policy.decide(command, redacted=redacted)
+            if policy is not None
+            else Decision(False, "no command policy configured")
+        )
+        plans.append(
+            TabPlan(
+                cwd=str(raw.get("cwd", "")),
+                command=command,
+                run_command=decision.run,
+                reason=decision.reason,
+                redacted=redacted,
+            )
+        )
+    return plans
+
+
 def build_plan(
     snapshot: Snapshot,
     live_windows: list[Window],
     *,
     available_monitors: list[str] | None = None,
+    command_policy=None,
 ) -> RestorePlan:
     """What restoring ``snapshot`` onto the current desktop would do.
 
@@ -199,14 +265,16 @@ def build_plan(
             plan.skipped.append((window, "no application id was captured"))
             continue
         placement, note, confidence = resolve(window)
+        tabs = _tab_plans(window, command_policy)
         plan.actions.append(
             Action(
-                kind=LAUNCH,
+                kind=TERMINAL if tabs else LAUNCH,
                 saved=window,
                 placement=placement,
                 app_id=window.app_id,
                 reason=note,
                 confidence=confidence,
+                tabs=tabs,
             )
         )
 

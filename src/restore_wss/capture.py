@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .model import Monitor, Rect, Snapshot, Window
+from .terminals import describe_terminal, is_terminal
 
 #: Window types worth restoring. Everything else — docks, dialogs owned by another window,
 #: tooltips, the Shell's own actors — is either not restorable or not the user's session.
@@ -141,3 +142,58 @@ def read_boot_id() -> str:
             return handle.read().strip()
     except OSError:
         return ""
+
+
+def apply_exclusions(result: CaptureResult, config) -> CaptureResult:
+    """Drop what the user has asked never to record.
+
+    Exclusion is applied here, on the way into the snapshot, rather than on the way out of it:
+    an excluded application should never reach the disk in the first place.
+    """
+    if config is None:
+        return result
+    kept = []
+    for window in result.snapshot.windows:
+        if config.excludes_app(window.wm_class, window.app_id):
+            result.skip("excluded by config")
+            continue
+        kept.append(window)
+    result.snapshot.windows = kept
+    return result
+
+
+def enrich_terminals(result: CaptureResult, config=None, *, reader=None) -> CaptureResult:
+    """Attach the ``terminal`` block to every terminal window.
+
+    This is where the process tree is walked, and it is deliberately the *only* place: the tree of
+    a window that is not a declared terminal is never read, because reading it means recording
+    somebody's command line.
+
+    ``reader`` is injectable so this can be tested against recorded trees.
+    """
+    if reader is None:
+        from .procwalk import read_tree
+
+        reader = read_tree
+
+    terminals = config.terminals if config is not None else None
+    for window in result.snapshot.windows:
+        if not window.pid:
+            continue
+        if not (
+            is_terminal(window.wm_class, terminals) if terminals else is_terminal(window.wm_class)
+        ):
+            continue
+        tree = reader(window.pid)
+        if tree is None:
+            continue
+        block = describe_terminal(tree)
+        if config is not None and config.exclude_paths:
+            # A tab whose working directory is under an excluded path is recorded as a bare
+            # terminal: the user asked for that directory not to be written down.
+            for tab in block["tabs"]:
+                if config.excludes_path(tab.get("cwd", "")):
+                    tab["cwd"] = ""
+                    tab.pop("command", None)
+        window.extra["terminal"] = block
+    return result
