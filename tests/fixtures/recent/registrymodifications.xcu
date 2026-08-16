@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The PickList shape from the real (4.4 MB) LibreOffice config on this machine, cut down to
+     two entries. The URI is the node *name*; the thumbnails and unrelated settings are gone. -->
+<oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<item oor:path="/org.openoffice.Office.Common/Misc"><prop oor:name="Unrelated" oor:op="fuse"><value>x</value></prop></item>
+<item oor:path="/org.openoffice.Office.Histories/Histories/org.openoffice.Office.Histories:HistoryInfo['PickList']/ItemList"><node oor:name="file:///home/user/Thesis.odt" oor:op="replace"><prop oor:name="Title" oor:op="fuse"><value>Thesis</value></prop><prop oor:name="Filter" oor:op="fuse"><value>writer8</value></prop></node></item>
+<item oor:path="/org.openoffice.Office.Histories/Histories/org.openoffice.Office.Histories:HistoryInfo['PickList']/ItemList"><node oor:name="file:///home/user/budget.ods" oor:op="replace"><prop oor:name="Title" oor:op="fuse"><value>budget</value></prop></node></item>
+</oor:items>

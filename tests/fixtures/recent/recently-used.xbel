@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Two entries in the shape the real ~/.local/share/recently-used.xbel uses on this machine
+     (GNOME 46, Ubuntu 24.04), with the paths replaced. -->
+<xbel version="1.0"
+      xmlns:bookmark="http://www.freedesktop.org/standards/desktop-bookmarks"
+      xmlns:mime="http://www.freedesktop.org/standards/shared-mime-info">
+  <bookmark href="file:///home/user/notes.txt" added="2026-08-16T09:00:00Z"
+            modified="2026-08-16T09:05:00Z" visited="2026-08-16T09:00:00Z">
+    <info><metadata owner="http://freedesktop.org">
+      <mime:mime-type type="text/plain"/>
+      <bookmark:applications>
+        <bookmark:application name="gnome-text-editor" exec="&apos;gnome-text-editor %u&apos;"
+                              modified="2026-08-16T09:05:00Z" count="3"/>
+      </bookmark:applications>
+    </metadata></info>
+  </bookmark>
+  <bookmark href="file:///home/user/photo.png" added="2026-08-15T18:00:00Z"
+            modified="2026-08-15T18:00:00Z" visited="2026-08-15T18:00:00Z">
+    <info><metadata owner="http://freedesktop.org">
+      <mime:mime-type type="image/png"/>
+      <bookmark:applications>
+        <bookmark:application name="Image Viewer" exec="&apos;loupe %u&apos;"
+                              modified="2026-08-15T18:00:00Z" count="1"/>
+      </bookmark:applications>
+    </metadata></info>
+  </bookmark>
+</xbel>

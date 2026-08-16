@@ -197,3 +197,85 @@ def enrich_terminals(result: CaptureResult, config=None, *, reader=None) -> Capt
                     tab.pop("command", None)
         window.extra["terminal"] = block
     return result
+
+
+def enrich_documents(result: CaptureResult, config=None, *, procs=None, recent=None, history=None):
+    """Attach the ``documents`` block to every window whose application has an adapter.
+
+    The expensive shared reads — the recent store and LibreOffice's picklist — happen once per
+    capture, not once per window, and both are injectable so this is testable without a home
+    directory. A window whose application has no adapter is not investigated at all: no process
+    read, no history lookup, tier 0 and no guess (``docs/app-adapters.md``).
+    """
+    from .documents import Context, adapter_for, documents_for
+
+    windows = [
+        window
+        for window in result.snapshot.windows
+        if adapter_for(window.wm_class, window.app_id) is not None
+    ]
+    if not windows:
+        return result
+
+    if procs is None:
+        from .procwalk import read_process
+
+        def procs(pid):
+            process = read_process(pid)
+            if process is None:
+                return [], []
+            return process.cmdline, _open_files(pid)
+
+    if recent is None:
+        from .recentfiles import read_recent_files
+
+        recent = read_recent_files
+    if history is None:
+        from .recentfiles import read_libreoffice_history
+
+        history = read_libreoffice_history
+
+    recent_entries = recent()
+    libreoffice_history: list[str] | None = None
+
+    for window in windows:
+        cmdline, open_files = procs(window.pid) if window.pid else ([], [])
+        adapter = adapter_for(window.wm_class, window.app_id)
+        app_history: list[str] = []
+        if "app-history" in (adapter.sources if adapter else ()):
+            if libreoffice_history is None:
+                libreoffice_history = history()
+            app_history = libreoffice_history
+
+        context = Context(
+            cmdline=cmdline,
+            open_files=open_files,
+            recent=recent_entries,
+            app_history=app_history,
+            captured_at=result.snapshot.captured_at,
+        )
+        documents = documents_for(window.wm_class, window.app_id, window.title, context)
+        if config is not None and config.exclude_paths:
+            documents = [d for d in documents if not config.excludes_path(d.path)]
+        if documents:
+            window.extra["documents"] = [document.to_json() for document in documents]
+    return result
+
+
+def _open_files(pid: int, limit: int = 64) -> list[str]:
+    """Targets of a process's open descriptors, ignoring anything unreadable."""
+    import os
+    from pathlib import Path as _Path
+
+    directory = _Path(f"/proc/{pid}/fd")
+    found: list[str] = []
+    try:
+        entries = sorted(directory.iterdir(), key=lambda item: int(item.name))
+    except (OSError, ValueError):
+        return found
+    for entry in entries[:limit]:
+        try:
+            found.append(os.readlink(entry))
+        except OSError:
+            continue
+    return found

@@ -19,7 +19,14 @@ import json
 import time
 
 from .busclient import ShellCoreClient
-from .capture import CaptureResult, apply_exclusions, capture, enrich_terminals, read_boot_id
+from .capture import (
+    CaptureResult,
+    apply_exclusions,
+    capture,
+    enrich_documents,
+    enrich_terminals,
+    read_boot_id,
+)
 from .cli import VERSION
 from .config import Config, load_config
 from .model import Snapshot
@@ -87,6 +94,7 @@ class Daemon:
         )
         apply_exclusions(result, self.config)
         enrich_terminals(result, self.config)
+        enrich_documents(result, self.config)
         self._snapshot = result.snapshot
         self._skipped = result.skipped
         return result

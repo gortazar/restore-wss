@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .documents import Document
 from .matcher import Match, match_windows
 from .model import Rect, Snapshot, Window
 from .policy import Decision
@@ -114,7 +115,8 @@ class Action:
         if self.kind == TERMINAL:
             tabs = "; ".join(tab.describe() for tab in self.tabs) or "an empty terminal"
             return f"start terminal → {target}: {tabs}"
-        return f"start {self.app_id or self.saved.wm_class} for {name} → {target}"
+        opening = f" opening {', '.join(self.uris)}" if self.uris else ""
+        return f"start {self.app_id or self.saved.wm_class} for {name}{opening} → {target}"
 
 
 @dataclass
@@ -266,12 +268,24 @@ def build_plan(
             continue
         placement, note, confidence = resolve(window)
         tabs = _tab_plans(window, command_policy)
+        documents = [Document.from_json(raw) for raw in window.extra.get("documents", [])]
+        # Only documents that can actually be reopened are handed to the application. A title-
+        # derived name is a hint for the user, not a URI, so it is shown in the reason instead.
+        uris = [d.uri for d in documents if "://" in d.uri]
+        if documents:
+            weakest = min(d.confidence for d in documents)
+            confidence = min(confidence, weakest)
+            if not uris:
+                note = (note + "; " if note else "") + (
+                    f"the document is only known by name ({documents[0].uri})"
+                )
         plan.actions.append(
             Action(
                 kind=TERMINAL if tabs else LAUNCH,
                 saved=window,
                 placement=placement,
                 app_id=window.app_id,
+                uris=uris,
                 reason=note,
                 confidence=confidence,
                 tabs=tabs,
