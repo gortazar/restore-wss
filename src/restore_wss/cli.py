@@ -191,6 +191,84 @@ def _restore(args, client_factory=None, confirm=None) -> int:
     return 1 if failures else 0
 
 
+def _list(args) -> int:
+    """The snapshots on disk. There are at most two, by design (the answered open question rules
+    out a history), and saying so is more useful than pretending there is a list to choose from."""
+    import json as _json
+
+    store = SnapshotStore(default_state_dir())
+    found = []
+    for label, path in (("current", store.current_path), ("previous", store.previous_path)):
+        snapshot = SnapshotStore._load_one(path)  # noqa: SLF001 — reading one file, deliberately
+        if snapshot is None:
+            continue
+        found.append(
+            {
+                "generation": label,
+                "path": str(path),
+                "captured_at": snapshot.captured_at,
+                "captured": _format_age(snapshot.captured_at),
+                "windows": len(snapshot.windows),
+                "boot_id": snapshot.boot_id,
+            }
+        )
+
+    if args.json:
+        print(_json.dumps(found, indent=2))
+        return 0
+    if not found:
+        print("restore-wss: no snapshots yet.")
+        return 0
+    for entry in found:
+        print(
+            f"{entry['generation']:>8}  {entry['captured']}  "
+            f"{entry['windows']} window(s)  {entry['path']}"
+        )
+    print("\nOnly these two are kept: the current snapshot and the one before it.")
+    return 0
+
+
+def _diff(args, source: SnapshotSource | None = None) -> int:
+    """What would change if the snapshot on disk were restored right now."""
+    import json as _json
+
+    from .diff import diff_windows
+
+    saved = SnapshotStore(default_state_dir()).load()
+    if saved is None:
+        print("restore-wss: no snapshot on disk to compare against.")
+        return 0
+
+    live = source if source is not None else resolve_snapshot()
+    if live.origin != "daemon" or live.snapshot is None:
+        print("restore-wss: the daemon is not running, so there is nothing to compare with.")
+        return 1
+
+    difference = diff_windows(saved.windows, live.snapshot.windows)
+    if args.json:
+        print(
+            _json.dumps(
+                {
+                    "only_in_snapshot": [w.to_json() for w in difference.only_in_snapshot],
+                    "only_running": [w.to_json() for w in difference.only_running],
+                    "moved": [
+                        {"saved": s.to_json(), "running": r.to_json()} for s, r in difference.moved
+                    ],
+                    "unchanged": difference.unchanged,
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if difference.is_empty:
+        print("The snapshot matches what is running.")
+        return 0
+    for line in difference.describe():
+        print(line)
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="restore-wss", description=__doc__)
     parser.add_argument("--version", action="store_true", help="print the version and exit")
@@ -200,6 +278,12 @@ def _build_parser() -> argparse.ArgumentParser:
     status.add_argument("--json", action="store_true", help="print the snapshot as JSON")
 
     sub.add_parser("save", help="capture and write a snapshot now")
+
+    listing = sub.add_parser("list", help="the snapshots on disk")
+    listing.add_argument("--json", action="store_true", help="print them as JSON")
+
+    difference = sub.add_parser("diff", help="the snapshot versus what is running now")
+    difference.add_argument("--json", action="store_true", help="print it as JSON")
 
     restore = sub.add_parser("restore", help="put the workspaces back")
     restore.add_argument("--dry-run", action="store_true", help="print the plan and stop")
@@ -253,6 +337,12 @@ def main(
         except Exception as error:  # noqa: BLE001
             print(f"restore-wss: cannot reach the daemon ({error}). Is restore-wss-daemon running?")
             return 1
+
+    if args.command == "list":
+        return _list(args)
+
+    if args.command == "diff":
+        return _diff(args, source=source)
 
     if args.command == "restore":
         return _restore(args, client_factory=client_factory, confirm=confirm)

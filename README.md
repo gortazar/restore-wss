@@ -65,6 +65,8 @@ a file.
 | --- | --- |
 | `restore-wss status [--json]` | what is captured now, and whether it came from the daemon or from disk |
 | `restore-wss save` | force a snapshot now |
+| `restore-wss list [--json]` | the snapshots on disk (there are at most two, by design) |
+| `restore-wss diff [--json]` | what would change if the snapshot were restored right now |
 | `restore-wss restore [--dry-run] [--yes] [--gui] [--json]` | show the plan, then carry it out |
 | `restore-wss daemon` | the capture loop (normally the systemd user unit) |
 | `restore-wss login-check` | the autostart entry's "was there a reboot?" check |
