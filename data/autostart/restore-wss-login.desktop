@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=restore-wss (offer to restore the session)
+Comment=After a reboot, offer to put the workspaces back
+Exec=restore-wss login-check
+# Only in a GNOME session: there is nothing here for other desktops, and X11 is out of scope.
+OnlyShowIn=GNOME;
+X-GNOME-Autostart-enabled=true
+NoDisplay=true

@@ -1,0 +1,21 @@
+[Unit]
+Description=restore-wss — keep a current snapshot of the GNOME session
+Documentation=https://github.com/gortazar/restore-wss
+# The daemon is useless without a graphical session: it talks to the Shell extension over the
+# session bus, and to NetworkManager over the system bus.
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/restore-wss daemon
+# The whole point is to survive an unclean shutdown, so a daemon that dies is a daemon that
+# stops protecting the session: restart it, but not in a tight loop if it is crashing on start.
+Restart=on-failure
+RestartSec=5
+# Capture is I/O the user did not ask for. It should never compete with what they are doing.
+Nice=5
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=graphical-session.target

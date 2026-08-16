@@ -1,0 +1,71 @@
+name: Release
+
+# A tag is the whole trigger: `git tag v0.1 && git push --tags` publishes the release. The
+# automatic GITHUB_TOKEN can create releases and upload assets in this repository, which is why
+# this workflow lives here rather than in the ideas repo.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: "experimental-features = nix-command flakes"
+
+      # A release that does not pass its own tests is not a release.
+      - run: nix flake check --print-build-logs
+
+      - name: Build the artefact
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          stage="$(mktemp -d)/restore-wss"
+          mkdir -p "$stage"
+          cp -r src/restore_wss "$stage/"
+          cp -r src/extension "$stage/extension"
+          mkdir -p "$stage/data"
+          cp -r data/systemd data/autostart "$stage/data/"
+          cp README.md LICENSE install.sh "$stage/"
+          # Stamp the version the tag says, so `restore-wss --version` matches the release.
+          sed -i "s/^VERSION = .*/VERSION = \"${version}\"/" "$stage/restore_wss/cli.py"
+          sed -i "s/\"version-name\": \"[^\"]*\"/\"version-name\": \"${version}\"/" \
+            "$stage/extension/metadata.json"
+          tar -czf restore-wss.tar.gz -C "$(dirname "$stage")" restore-wss
+          sha256sum restore-wss.tar.gz > restore-wss.tar.gz.sha256
+
+      - name: Check the artefact contains what the installer expects
+        run: |
+          tar -tzf restore-wss.tar.gz | tee /dev/stderr | grep -q 'restore-wss/restore_wss/cli.py'
+          for entry in restore-wss/extension/metadata.json \
+              restore-wss/extension/extension.js \
+              restore-wss/data/systemd/restore-wss.service \
+              restore-wss/data/autostart/restore-wss-login.desktop \
+              restore-wss/install.sh; do
+            tar -tzf restore-wss.tar.gz | grep -qx "$entry" || {
+              echo "the archive is missing $entry" >&2
+              exit 1
+            }
+          done
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            restore-wss.tar.gz
+            restore-wss.tar.gz.sha256
+          generate_release_notes: true
+          body: |
+            Install with:
+
+            ```console
+            curl -fsSL https://raw.githubusercontent.com/gortazar/restore-wss/main/install.sh | sh
+            ```
+
+            Then log out and back in, and `gnome-extensions enable session-core@restore-wss.patxi`.

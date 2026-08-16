@@ -201,6 +201,10 @@ def _build_parser() -> argparse.ArgumentParser:
     restore.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     restore.add_argument("--json", action="store_true", help="print the plan as JSON and stop")
 
+    sub.add_parser(
+        "login-check",
+        help="decide whether to offer a restore (run by the autostart entry, not by hand)",
+    )
     sub.add_parser("daemon", help="run the capture loop (normally a systemd user unit)")
     return parser
 
@@ -244,6 +248,26 @@ def main(
 
     if args.command == "restore":
         return _restore(args, client_factory=client_factory, confirm=confirm)
+
+    if args.command == "login-check":
+        from .config import load_config
+        from .login import decide
+
+        store = SnapshotStore(default_state_dir())
+        decision = decide(store.load(), load_config())
+        if not decision.offer:
+            print(f"restore-wss: not offering a restore — {decision.reason}.")
+            return 0
+        print(f"restore-wss: {decision.reason}.")
+        if decision.unattended:
+            return _restore(
+                argparse.Namespace(json=False, dry_run=False, yes=True),
+                client_factory=client_factory,
+            )
+        # Until the review dialog exists, say what to run rather than launching a dozen
+        # applications behind the user's back.
+        print("Run `restore-wss restore` to put the workspaces back.")
+        return 0
 
     if args.command == "daemon":
         from .daemon import run  # imported late: needs PyGObject
