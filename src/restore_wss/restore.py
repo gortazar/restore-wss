@@ -20,6 +20,10 @@ from .plan import LAUNCH, PLACE, TERMINAL, Action, RestorePlan
 from .terminalcmd import terminal_argv
 from .vpn import interpret_failure
 
+#: How long to wait for the browser to pick up a restore request. Long enough for Firefox to finish
+#: starting and its add-on to connect the native host, short enough not to look hung.
+BROWSER_WAIT_SECONDS = 30.0
+
 
 @dataclass
 class ActionResult:
@@ -41,6 +45,8 @@ class RestoreResult:
     #: ``(connection name, state, detail)``. ``needs-you`` is neither success nor failure: the VPN
     #: wants a password or a code, which is a prompt rather than something to retry.
     vpn: list[tuple[str, str, str]] = field(default_factory=list)
+    #: ``(state, detail)`` for the browser half.
+    browser: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def failures(self) -> list[ActionResult]:
@@ -139,6 +145,13 @@ def execute(
             ActionResult(action, "pending", f"no window yet after {wait_seconds:.0f} s")
         )
 
+    if plan.browser.actions:
+        _ask_the_browser(plan, result, sleep=sleep)
+    for title, reason in plan.browser.skipped:
+        result.browser.append(("skipped", f"{title or 'a browser window'}: {reason}"))
+    for title in plan.browser.already_open:
+        result.browser.append(("done", f"{title or 'a browser window'} was already restored"))
+
     for vpn_action in plan.vpn.actions:
         if vpn_action.kind == "already-up":
             result.vpn.append((vpn_action.connection.name, "done", "already connected"))
@@ -164,6 +177,41 @@ def execute(
             core.activate_workspace(plan.active_workspace)
 
     return result
+
+
+def _ask_the_browser(plan: RestorePlan, result: RestoreResult, *, sleep=time.sleep) -> None:
+    """Leave a request in the file drop and wait a bounded time for the host to take it.
+
+    Bounded, and reported either way: the extension may not be installed, the browser may still be
+    starting, or the host may not be running — none of which is a reason to hang a restore.
+    """
+    from .bridge import request_pending, write_request
+
+    windows = [action.to_json() for action in plan.browser.actions]
+    path = write_request(windows)
+    if path is None:
+        result.browser.append(
+            (
+                "needs-you",
+                f"{len(windows)} browser window(s) not restored: no browser drop directory, so the "
+                "restore-wss add-on is not installed",
+            )
+        )
+        return
+
+    deadline = time.monotonic() + BROWSER_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        if not request_pending():
+            result.browser.append(("done", f"asked the browser for {len(windows)} window(s)"))
+            return
+        sleep(0.5)
+    result.browser.append(
+        (
+            "needs-you",
+            f"the browser did not pick up the request for {len(windows)} window(s) within "
+            f"{BROWSER_WAIT_SECONDS:.0f}s — is Firefox running with the add-on enabled?",
+        )
+    )
 
 
 def _result_for(action: Action, report: dict) -> ActionResult:

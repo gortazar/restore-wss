@@ -279,3 +279,72 @@ def _open_files(pid: int, limit: int = 64) -> list[str]:
         except OSError:
             continue
     return found
+
+
+def enrich_browsers(result: CaptureResult, config=None, *, reader=None, reports=None):
+    """Attach a ``browser`` block to every browser window.
+
+    Two sources, better first (``docs/browser-extensions-research.md`` §8):
+
+    * ``reports`` — what the extension last said, through the native host's file drop. Live, but
+      only present once the add-on is installed and enabled.
+    * ``reader`` — Firefox's own session file: always there, minutes stale, no permission needed.
+
+    Correlation decides which browser window is which compositor window, and a window it cannot
+    place confidently gets a block with no tabs rather than somebody else's (``browsercorrelate``).
+    """
+    from .browser import DEFAULT_BROWSER_WM_CLASSES, attach, is_browser
+    from .browsercorrelate import correlate, looks_private, unknown_block
+
+    families = DEFAULT_BROWSER_WM_CLASSES
+    if config is not None and getattr(config, "browsers", None):
+        families = tuple(config.browsers)
+    windows = [
+        window for window in result.snapshot.windows if is_browser(window.wm_class, families)
+    ]
+    if not windows:
+        return result
+
+    # A private window is never given tabs, whatever a source claims: the extension refuses to
+    # report them and the session file never holds them, and this is the third line of defence.
+    private = [window for window in windows if looks_private(window)]
+    for window in private:
+        attach(window, unknown_block(reason="a private window is never recorded"))
+        result.skip("private browsing window")
+    windows = [window for window in windows if window not in private]
+    if not windows:
+        return result
+
+    blocks: list = []
+    geometries: list = []
+    if reports is not None:
+        blocks, geometries = reports()
+    if not blocks and reader is not None:
+        blocks, geometries, _source = reader()
+
+    if not blocks:
+        for window in windows:
+            attach(window, unknown_block(reason="no browser reported its tabs"))
+        return result
+
+    if config is not None and getattr(config, "exclude_urls", ()):
+        blocks = [_filter_urls(block, config) for block in blocks]
+
+    correlation = correlate(windows, blocks, geometries)
+    for entry in correlation.matched:
+        attach(entry.window, entry.block)
+    for entry in correlation.unknown:
+        attach(entry.window, unknown_block(reason=entry.reason))
+        result.skip("browser window could not be correlated")
+    return result
+
+
+def _filter_urls(block, config):
+    """Drop tabs the user asked never to record, and note that something was dropped."""
+    kept = [tab for tab in block.tabs if not config.excludes_url(tab.url)]
+    if len(kept) != len(block.tabs):
+        removed = len(block.tabs) - len(kept)
+        block.tabs = kept
+        note = f"{removed} tab(s) excluded by config"
+        block.reason = f"{block.reason}; {note}" if block.reason else note
+    return block

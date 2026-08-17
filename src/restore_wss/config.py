@@ -46,6 +46,16 @@ deny = []
 # already covered).
 redact_options = []
 
+[browsers]
+# Capture tabs at all. Turning this off leaves the rest of restore-wss working.
+enabled = true
+# What to store per tab: "urls" (url + title), "titles" (titles only), or "none" (shape only).
+store = "urls"
+# Tabs whose URL matches any of these substrings or glob patterns are never recorded.
+exclude_urls = []
+# Which applications are browsers. Only these have a browser block attached.
+# browsers = ["firefox"]
+
 [restore]
 # Offer to restore at the first login after a reboot. Off by default: restoring launches a dozen
 # applications, which is a lot to do to someone who just wanted to check their email.
@@ -65,6 +75,11 @@ class Config:
     redact_options: tuple[str, ...] = ()
     restore_at_login: bool = False
     restore_unattended: bool = False
+    browsers_enabled: bool = True
+    #: ``urls`` | ``titles`` | ``none`` — how much of a tab is written down.
+    browser_store: str = "urls"
+    exclude_urls: tuple[str, ...] = ()
+    browsers: tuple[str, ...] = ()
     #: Everything wrong with the file, in the user's words rather than a traceback.
     problems: tuple[str, ...] = ()
 
@@ -73,6 +88,18 @@ class Config:
 
     def excludes_path(self, path: str) -> bool:
         return any(path.startswith(prefix) for prefix in self.exclude_paths)
+
+    def excludes_url(self, url: str) -> bool:
+        """Whether a tab's URL is one the user asked never to record.
+
+        Substring *or* glob, because "the bank" and "https://*.example.com/*" are both things people
+        mean, and asking them to know which is which is a bad trade for one line of code.
+        """
+        from fnmatch import fnmatch
+
+        return any(
+            pattern in url or fnmatch(url, pattern) for pattern in self.exclude_urls if pattern
+        )
 
 
 def default_config_path() -> Path:
@@ -116,6 +143,14 @@ def load_config(path: Path | None = None) -> Config:
     capture = raw.get("capture") or {}
     commands = raw.get("commands") or {}
     restore = raw.get("restore") or {}
+    browsers = raw.get("browsers") or {}
+
+    store = browsers.get("store", "urls")
+    if store not in ("urls", "titles", "none"):
+        problems.append(
+            f"browsers.store = {store!r} is not one of ('urls', 'titles', 'none'); using 'urls'"
+        )
+        store = "urls"
 
     mode = commands.get("policy", WHITELIST)
     if mode not in MODES:
@@ -139,6 +174,10 @@ def load_config(path: Path | None = None) -> Config:
         redact_options=_strings(
             commands.get("redact_options"), problems, "commands.redact_options"
         ),
+        browsers_enabled=_bool(browsers.get("enabled"), problems, "browsers.enabled", True),
+        browser_store=store,
+        exclude_urls=_strings(browsers.get("exclude_urls"), problems, "browsers.exclude_urls"),
+        browsers=_strings(browsers.get("browsers"), problems, "browsers.browsers"),
         restore_at_login=_bool(restore.get("at_login"), problems, "restore.at_login", False),
         restore_unattended=_bool(restore.get("unattended"), problems, "restore.unattended", False),
         problems=tuple(problems),

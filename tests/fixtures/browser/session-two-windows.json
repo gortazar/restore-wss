@@ -1,0 +1,48 @@
+{
+  "_comment": "A Firefox session document in the shape the real recovery.jsonlz4 uses on this machine (Firefox 142, snap): two windows, both entry shapes seen in the wild (a full session-history entry and a minimal {title,url,triggeringPrincipal_base64} one), a pinned tab, a hidden tab, and an about:newtab that is not a tab anybody opened. URLs are made up.",
+  "version": ["sessionrestore", 1],
+  "selectedWindow": 1,
+  "windows": [
+    {
+      "selected": 2,
+      "width": 1165, "height": 1408, "screenX": 0, "screenY": 0, "sizemode": "maximized",
+      "tabs": [
+        {
+          "pinned": true,
+          "index": 1,
+          "entries": [
+            {"url": "https://mail.example.com/", "title": "Inbox — Mail",
+             "triggeringPrincipal_base64": "eyJ0Ijoi"}
+          ]
+        },
+        {
+          "index": 2,
+          "entries": [
+            {"url": "https://old.example.com/", "title": "An earlier page",
+             "triggeringPrincipal_base64": "eyJ0Ijoi"},
+            {"ID": 12, "docshellUUID": "{7f0d}", "url": "https://gnome.org/",
+             "title": "GNOME", "cacheKey": 0, "originalURI": "https://gnome.org/"}
+          ]
+        },
+        {
+          "hidden": true,
+          "index": 1,
+          "entries": [{"url": "https://hidden.example.com/", "title": "Hidden by a tab group"}]
+        },
+        {"index": 1, "entries": [{"url": "about:newtab", "title": "New Tab"}]}
+      ]
+    },
+    {
+      "selected": 1,
+      "width": 900, "height": 700, "screenX": 1920, "screenY": 40, "sizemode": "normal",
+      "tabs": [
+        {"index": 1, "entries": [{"url": "https://docs.example.com/thesis", "title": "Thesis"}]}
+      ]
+    },
+    {
+      "selected": 1,
+      "tabs": [{"index": 1, "entries": [{"url": "about:blank", "title": "New Tab"}]}]
+    }
+  ],
+  "_closedWindows": []
+}

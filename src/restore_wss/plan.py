@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .browserrestore import BrowserPlan
 from .documents import Document
 from .matcher import Match, match_windows
 from .model import Rect, Snapshot, Window
@@ -135,6 +136,9 @@ class RestorePlan:
     #: What to do about the VPNs that were up (``vpn.py``). Separate from the window actions
     #: because it is a different kind of thing to confirm.
     vpn: VpnPlan = field(default_factory=VpnPlan)
+    #: What to ask the browser for (``browserrestore.py``). Separate for the same reason: the
+    #: browser restores itself first, and this is only the difference.
+    browser: BrowserPlan = field(default_factory=BrowserPlan)
 
     @property
     def is_empty(self) -> bool:
@@ -143,6 +147,7 @@ class RestorePlan:
     def describe(self) -> list[str]:
         lines = [action.describe() for action in self.actions]
         lines += self.vpn.describe()
+        lines += self.browser.describe()
         lines += [f"skip  {window.title or window.wm_class}: {why}" for window, why in self.skipped]
         for match in self.ambiguous:
             lines.append(

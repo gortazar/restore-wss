@@ -106,6 +106,7 @@ def _print_status(source: SnapshotSource, out: TextIO) -> None:
                 if on
             )
             print(f"  [{where}{size}]{' ' + flags if flags else ''} {name}", file=out)
+            _print_window_detail(window, out)
 
     plural = "" if len(snapshot.windows) == 1 else "s"
     print(
@@ -113,6 +114,31 @@ def _print_status(source: SnapshotSource, out: TextIO) -> None:
         f"{'' if len(by_workspace) == 1 else 's'}.",
         file=out,
     )
+
+
+def _print_window_detail(window, out: TextIO) -> None:
+    """The per-window extras: tabs for a browser, tabs-in-the-other-sense for a terminal.
+
+    Printed under the window rather than as a separate section, because "which window were those
+    seven tabs in" is the question the user is actually asking.
+    """
+    from .browser import browser_of
+
+    block = browser_of(window)
+    if block is not None:
+        if not block.tabs:
+            print(f"      tabs unknown ({block.reason})", file=out)
+        else:
+            count = len(block.tabs)
+            preview = "; ".join((tab.title or tab.url)[:38] for tab in block.tabs[:3])
+            more = "" if count <= 3 else f"; …{count - 3} more"
+            confidence = "" if block.confidence >= 0.9 else f" ~{block.confidence:.0%} sure"
+            print(f"      {count} tab(s){confidence}: {preview}{more}", file=out)
+
+    terminal = window.extra.get("terminal") or {}
+    for tab in terminal.get("tabs", []):
+        command = " ".join(tab.get("command", [])) or "(shell)"
+        print(f"      {tab.get('cwd', '?')}: {command}", file=out)
 
 
 def print_plan(plan: dict, out: TextIO) -> None:
@@ -136,6 +162,8 @@ def print_plan(plan: dict, out: TextIO) -> None:
             f"(score {entry['score']:.2f}) — too close to call, left alone",
             file=out,
         )
+    for entry in plan.get("browser", []):
+        print(f"   {entry['description']}", file=out)
     for entry in plan.get("vpn", []):
         print(f"   {entry['description']}", file=out)
     untouched = plan.get("untouched", [])
@@ -167,7 +195,7 @@ def _restore(args, client_factory=None, confirm=None) -> int:
         return 0
 
     print_plan(plan, sys.stdout)
-    if not plan.get("actions") and not plan.get("vpn"):
+    if not any(plan.get(key) for key in ("actions", "vpn", "browser")):
         return 0
     if args.dry_run:
         print("\n--dry-run: nothing was changed.")
@@ -185,6 +213,8 @@ def _restore(args, client_factory=None, confirm=None) -> int:
     for entry in result.get("results", []):
         detail = f" — {entry['detail']}" if entry.get("detail") else ""
         print(f"{entry['state']:>7}  {entry['description']}{detail}")
+    for entry in result.get("browser", []):
+        print(f"{entry['state']:>7}  tabs {entry['detail']}")
     for entry in result.get("vpn", []):
         print(f"{entry['state']:>7}  vpn {entry['name']} — {entry['detail']}")
     failures = [r for r in result.get("results", []) if r["state"] != "done"]

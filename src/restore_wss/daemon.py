@@ -18,11 +18,14 @@ from __future__ import annotations
 import json
 import time
 
+from .browser import browser_of
+from .browserrestore import plan_browser_restore
 from .busclient import ShellCoreClient
 from .capture import (
     CaptureResult,
     apply_exclusions,
     capture,
+    enrich_browsers,
     enrich_documents,
     enrich_terminals,
     read_boot_id,
@@ -104,6 +107,15 @@ class Daemon:
         apply_exclusions(result, self.config)
         enrich_terminals(result, self.config)
         enrich_documents(result, self.config)
+        if self.config.browsers_enabled:
+            # Two sources, better first: what the extension reported through the file drop, then
+            # Firefox's own session file. The second needs no add-on, which is why it exists.
+            enrich_browsers(
+                result,
+                self.config,
+                reader=self._read_session_file,
+                reports=self._read_browser_report,
+            )
         vpns = self._active_vpns()
         if vpns:
             result.snapshot.extra["vpn"] = [connection.to_json() for connection in vpns]
@@ -121,6 +133,22 @@ class Daemon:
             self._vpn_cache = self._nm.active_vpns()
             self._vpn_checked = now
         return self._vpn_cache
+
+    @staticmethod
+    def _read_browser_report():
+        """What the extension last said, if it is fresh enough to be about the session on screen."""
+        from .bridge import read_report
+
+        report = read_report()
+        if report is None or not report.is_fresh:
+            return [], []
+        return report.windows, report.geometries
+
+    @staticmethod
+    def _read_session_file():
+        from .sessionfile import read_windows
+
+        return read_windows()
 
     def write(self) -> str:
         """Write the current snapshot now, whatever the rate limit says."""
@@ -178,6 +206,20 @@ class Daemon:
             available_monitors=monitors,
             command_policy=self.config.command_policy,
         )
+        # The browser restores itself first, so this is the difference between what was captured
+        # and what it brought back — computed against the live browser, not against the snapshot.
+        if self.config.browsers_enabled:
+            saved_browsers = [
+                (window.id, block)
+                for window in saved.windows
+                if (block := browser_of(window)) is not None
+            ]
+            if saved_browsers:
+                live_blocks, _geometries = self._read_browser_report()
+                if not live_blocks:
+                    live_blocks, _geometries, _source = self._read_session_file()
+                plan.browser = plan_browser_restore(saved_browsers, live_blocks)
+
         saved_vpns = [VpnConnection.from_json(raw) for raw in saved.extra.get("vpn", [])]
         if saved_vpns and self._nm is not None:
             plan.vpn = plan_vpn(
@@ -215,6 +257,7 @@ class Daemon:
                     {"name": name, "state": state, "detail": detail}
                     for name, state, detail in result.vpn
                 ],
+                "browser": [{"state": state, "detail": detail} for state, detail in result.browser],
                 "workspaces": result.workspaces_after,
             }
         )
@@ -255,6 +298,7 @@ def _plan_to_json(plan: RestorePlan) -> dict:
             for match in plan.ambiguous
         ],
         "untouched": [{"title": w.title, "wm_class": w.wm_class} for w in plan.untouched],
+        "browser": [{"kind": "tabs", "description": line} for line in plan.browser.describe()],
         "vpn": [
             {"name": a.connection.name, "kind": a.kind, "description": a.describe()}
             for a in plan.vpn.actions

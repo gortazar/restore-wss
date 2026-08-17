@@ -1,0 +1,17 @@
+{
+  "manifest_version": 2,
+  "name": "restore-wss",
+  "version": "0.2",
+  "description": "Reports this browser's windows and tabs to restore-wss, so a reboot puts them back on the right workspaces. Private windows are never reported.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "restore-wss@patxi.gortazar",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": ["tabs", "nativeMessaging"],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  }
+}
