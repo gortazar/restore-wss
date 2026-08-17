@@ -17,7 +17,7 @@ from typing import TextIO
 from .model import Snapshot
 from .storage import SnapshotStore, default_state_dir
 
-VERSION = "0.1.0"
+VERSION = "0.2"
 
 
 @dataclass
