@@ -1,0 +1,21 @@
+# The AppArmor rules that decide whether a native-messaging host can work with snap Firefox.
+# Extracted from /var/lib/snapd/apparmor/profiles/snap.firefox.firefox on 2026-08-17
+# (Firefox snap, strict confinement, Ubuntu 24.04). Line numbers are from that file.
+#
+# ix = execute, inheriting this profile's confinement. That is what makes a host under
+# ~/snap/firefox/ runnable — and what stops it reaching org.gnome.RestoreWss on the bus.
+# The @{HOME}/[^s.]** family is the `home` interface: everything except hidden top-level
+# directories, which is why ~/.mozilla/native-messaging-hosts is invisible.
+
+304: owner @{HOME}/snap/@{SNAP_INSTANCE_NAME}/                  r,
+305: owner @{HOME}/snap/@{SNAP_INSTANCE_NAME}/**                mrkix,
+318: owner @{HOME}/snap/@{SNAP_INSTANCE_NAME}/@{SNAP_REVISION}/** wl,
+319: owner @{HOME}/snap/@{SNAP_INSTANCE_NAME}/common/** wl,
+2122: owner @{HOME}/[^s.]**             rwklix,
+2123: owner @{HOME}/s[^n]**             rwklix,
+2126: owner @{HOME}/snap[^/]**          rwklix,
+2132: # @{HOME}/snap/@{SNAP_INSTANCE_NAME} through @{HOME}/snap to @{HOME}.
+2348: owner "@{HOME}/.mozilla/firefox{,/,/**}" rk,
+
+# D-Bus: 140 `bus=session` rules, every one an allow-list of specific peer names
+# (portals, a11y, MPRIS, StatusNotifier, org.freedesktop.DBus). No arbitrary name is allowed.
