@@ -10,7 +10,7 @@ confidence.
 | --- | --- | --- |
 | **0** | The application only. No adapter, no rule, no guess. | Launches the app with no arguments. |
 | **1** | The document is recovered by introspection — from the process, from a recent-file store, or from a declared title pattern. | Launches the app with the document's URI. |
-| **2** | The application reports its own state. | Not built here. The schema and the D-Bus API leave room for it: a window may carry a `documents` block written by something else. |
+| **2** | The application reports its own state, through something installed alongside it. | **Real since v0.2**: Firefox, through the add-on and its native-messaging host. See the worked example below. |
 
 **Tier 0 is a real answer, not a failure.** An application with no entry in the table is restored
 blank rather than with a guessed document, because opening the wrong file is worse than opening
@@ -77,6 +77,34 @@ on screen.
 The title pattern is the last resort and only ever yields a *name*: "Thesis" cannot be reopened, so
 restore says "the document is only known by name (Thesis)" in the review text and lowers the
 action's confidence instead of pretending.
+
+### A browser — Firefox (tier 2, and the worked example for it)
+
+The only tier-2 application today, and worth reading as the template for what tier 2 costs.
+
+**What reports the state.** A WebExtension with the `tabs` permission
+(`src/browser-extension/`) sends every non-private window's tabs to a native-messaging host
+(`src/native-host/restore-wss-firefox-host.py`), which drops them in a file the daemon reads. Not
+D-Bus: a host executed by snap Firefox inherits the browser's AppArmor confinement, whose session-bus
+rules are a per-name allow-list (`docs/browser-extensions-research.md` §1).
+
+**What happens without it.** Tier 2 degrades to a *file* rather than to nothing: Firefox's own
+`recovery.jsonlz4` is read directly, giving windows, tabs, pinned and selected state and geometry
+with no add-on and no permission — minutes stale instead of live, and labelled as such in the
+snapshot (`source: "session-file"`).
+
+**What is different about tier 2.** Two things this project had not had to deal with before:
+
+1. **Correlation.** A document belongs to the window whose process it was read from; a *tab set*
+   belongs to a browser window that has no connection to the compositor window except its title.
+   That is a heuristic with a confidence, and it refuses rather than guesses
+   (`src/restore_wss/browsercorrelate.py`).
+2. **The application restores itself.** Firefox's own session restore stays on, so restore is
+   reconciliation: fill in what it did not bring back, never duplicate what it did
+   (`src/restore_wss/browserrestore.py`).
+
+**What it does not recover:** per-tab back/forward history, scroll position and form state. Reading
+those needs a content script in every page — a far larger permission for a much smaller return.
 
 ### A terminal — `gnome-terminal` (its own mechanism entirely)
 

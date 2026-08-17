@@ -82,7 +82,7 @@
           extension-syntax = pkgs.runCommand "restore-wss-extension-syntax"
             { inherit src; nativeBuildInputs = [ pkgs.nodejs_22 pkgs.jq ]; } ''
             cp -r "$src" ./source && chmod -R u+w ./source && cd ./source
-            for f in $(find src/extension -name '*.js'); do
+            for f in $(find src/extension src/browser-extension -name '*.js'); do
               cp "$f" "$f.mjs"
               node --check "$f.mjs" || { echo "syntax error in $f" >&2; exit 1; }
               rm "$f.mjs"
@@ -92,6 +92,14 @@
               jq -e --arg f "$field" 'has($f)' src/extension/metadata.json >/dev/null \
                 || { echo "metadata.json: missing \"$field\"" >&2; exit 1; }
             done
+            # The add-on's manifest is what Firefox refuses to load it without — and the extension
+            # id has to match what the host manifest pins in allowed_extensions.
+            jq -e '.manifest_version == 2 and (.permissions | index("nativeMessaging"))' \
+              src/browser-extension/manifest.json >/dev/null \
+              || { echo "browser manifest: not MV2 with nativeMessaging" >&2; exit 1; }
+            id=$(jq -r '.browser_specific_settings.gecko.id' src/browser-extension/manifest.json)
+            grep -q "$id" install.sh \
+              || { echo "install.sh does not pin the add-on id $id" >&2; exit 1; }
             echo "extension syntax OK" > "$out"
           '';
         };

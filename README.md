@@ -38,6 +38,43 @@ instead, with the doubtful items switched off:
 
 ![The review window](screenshots/review.png)
 
+## Browser tabs
+
+Tabs work **with no browser add-on at all**: restore-wss reads Firefox's own session file, which
+carries every window's tabs, their titles, pinned state and the selected tab. That is what Firefox
+last wrote down — usually seconds old, occasionally minutes — and it needs no permission from you.
+
+```console
+$ restore-wss status
+Workspace 4
+  [eDP-1 1165x1408] M Dedicación Mica y Patxi - Google Sheets — Mozilla Firefox
+      8 tab(s): Content planning - Google Sheets; Interviews - Google Docs; …6 more
+```
+
+Install the add-on as well and the state becomes live rather than last-flushed:
+
+```console
+$ firefox ~/.local/share/restore-wss/restore-wss-firefox.xpi
+```
+
+Restoring is **reconciliation**, because Firefox's own "restore previous session" stays on: a window
+Firefox brought back itself is left alone, one it did not is created with its tabs in order, and tabs
+are never appended to a window you have since been using. Running `restore` twice changes nothing the
+second time.
+
+### The Firefox add-on
+
+The add-on is in the release tarball as `browser-extension.xpi`. Release Firefox installs only
+**signed** add-ons, and signing an add-on means signing it with *an* AMO account — so it is signed
+here only when this repository has `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` configured; the workflow
+runs `web-ext sign --channel unlisted` and attaches `restore-wss-firefox-signed.xpi`. Without those
+secrets the asset is unsigned, which is installable in Developer Edition, Nightly, or as a temporary
+add-on — and the session-file route above needs none of it.
+
+What the add-on can see, plainly: the address and title of every page in every non-private window.
+Private windows are never reported. `browsers.enabled = false`, `browsers.exclude_urls` and
+`browsers.store = "titles"` are all in [docs/limitations.md](docs/limitations.md#browsers-and-tabs-v02).
+
 ## How it works, in one paragraph
 
 The snapshot is written **continuously**, not at logout — a design forced by the fact that the
@@ -98,6 +135,7 @@ $ tools/smoke-nested.sh   # the whole thing against a real headless GNOME Shell
 | [docs/app-adapters.md](docs/app-adapters.md) | The document tier model and how to add an application |
 | [docs/limitations.md](docs/limitations.md) | What cannot be restored, and why |
 | [docs/shared-core.md](docs/shared-core.md) | `org.gnome.SessionCore`, the reusable compositor-side half |
+| [docs/browser-extensions-research.md](docs/browser-extensions-research.md) | Browser prior art, the snap-confinement findings, and the go/no-go behind the design above |
 
 ## Licence
 

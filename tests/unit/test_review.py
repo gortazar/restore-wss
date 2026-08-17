@@ -68,3 +68,45 @@ def test_an_empty_plan_says_so_rather_than_showing_an_empty_list():
     model = build_model({"actions": [], "workspace_count": 0})
     assert "Nothing to restore" in model.heading
     assert model.rows == []
+
+
+BROWSER_PLAN = dict(
+    PLAN,
+    browser=[
+        {
+            "kind": "open",
+            "description": "Reopen 7 tab(s): https://gnome.org/, https://a/ and 5 more",
+        },
+        {"kind": "skipped", "description": "A browser window: its tabs were never captured"},
+        {"kind": "already", "description": "Thesis was already restored by Firefox"},
+    ],
+)
+
+
+def test_only_actionable_browser_rows_get_a_switch():
+    model = build_model(BROWSER_PLAN)
+    rows = [row for row in model.rows if row.kind == "browser"]
+    assert len(rows) == 1
+    assert "7 tab(s)" in rows[0].title
+    # Not a window action, so it never appears in the indices passed to Restore.
+    assert -2 not in model.selected_indices
+
+
+def test_browser_windows_with_nothing_to_do_are_notes_not_switches():
+    """Offering a switch for a window whose tabs were never captured offers to do nothing."""
+    notes = "\n".join(build_model(BROWSER_PLAN).notes)
+    assert "never captured" in notes
+    assert "already restored by Firefox" in notes
+
+
+def test_the_browser_half_can_be_switched_off_as_a_whole():
+    model = build_model(BROWSER_PLAN)
+    assert model.restore_tabs
+    for row in model.rows:
+        if row.kind == "browser":
+            row.selected = False
+    assert not model.restore_tabs
+
+
+def test_a_plan_with_no_browser_rows_leaves_tabs_alone():
+    assert build_model(PLAN).restore_tabs is True

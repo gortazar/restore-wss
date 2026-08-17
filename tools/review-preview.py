@@ -57,6 +57,16 @@ PLAN = {
     "skipped": [{"title": "Odd window", "wm_class": "Odd", "reason": "no application id"}],
     "ambiguous": [{"title": "patxi@host: ~", "candidate": "patxi@host: ~/tmp", "score": 0.93}],
     "untouched": [{"title": "Inbox — Mail", "wm_class": "firefox"}],
+    "browser": [
+        {
+            "kind": "open",
+            "description": "Reopen 7 tab(s): openvidu-marketing/openvidu.io, OpenSEO and 5 more",
+        },
+        {
+            "kind": "skipped",
+            "description": "A browser window on workspace 5: its tabs were never captured",
+        },
+    ],
     "vpn": [{"name": "work", "kind": "activate", "description": "Reconnect the VPN “work”"}],
 }
 

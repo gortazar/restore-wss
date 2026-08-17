@@ -156,3 +156,51 @@ def test_the_host_answers_a_handshake(tmp_path):
     host.handle({"type": "hello"}, tmp_path, out)
     reply = host.read_frame(io.BytesIO(out.getvalue()))
     assert reply["host"] == "restore-wss"
+
+
+def test_the_host_runs_as_a_process_and_writes_what_it_is_sent(tmp_path):
+    """The shipped host, launched the way Firefox launches it: framed JSON on stdin.
+
+    This is the only test that exercises its main loop — the select() poll that lets a restore
+    request reach an idle browser — rather than its functions.
+    """
+    import subprocess
+    import sys
+    import time
+
+    drop = tmp_path / "drop"
+    process = subprocess.Popen(
+        [sys.executable, str(HOST_PATH)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        env={"RESTORE_WSS_BROWSER_DROP": str(drop), "PATH": "/usr/bin:/bin"},
+    )
+    try:
+        process.stdin.write(host.frame(a_report(url="https://spawned.example/")))
+        process.stdin.flush()
+
+        report = None
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            report = read_report(roots=[str(drop)])
+            if report is not None:
+                break
+            time.sleep(0.1)
+        assert report is not None, "the host did not write a report"
+        assert report.windows[0].tabs[0].url == "https://spawned.example/"
+
+        # And a request left for it is picked up while the browser says nothing at all.
+        write_request(
+            [{"urls": ["https://asked-for/"], "pinned": [False], "active": 0}], roots=[str(drop)]
+        )
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and request_pending(roots=[str(drop)]):
+            time.sleep(0.1)
+        assert not request_pending(roots=[str(drop)]), "the host never took the request"
+
+        forwarded = host.read_frame(process.stdout)
+        assert forwarded["type"] == "restore"
+        assert forwarded["windows"][0]["urls"] == ["https://asked-for/"]
+    finally:
+        process.stdin.close()
+        process.wait(timeout=10)

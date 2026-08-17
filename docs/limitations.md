@@ -91,6 +91,47 @@ The terminal support is the most valuable part of this and also the most hedged.
   open the tabs cannot yet be attributed to the right window. Both windows are restored; their tabs
   may be grouped wrongly.
 
+## Browsers and tabs (v0.2)
+
+Firefox only, per the answered open question. What works, and what does not:
+
+* **What is captured** — every non-private window's tabs: URL, title, pinned and active state, and
+  the tab group's id where there is one. From two sources: the add-on (live) or Firefox's own session
+  file (`recovery.jsonlz4`, minutes stale). The snapshot records which, and `restore-wss status`
+  shows it.
+* **What the `tabs` permission means, in one paragraph.** The add-on can see the address and title of
+  every page open in every non-private window, and restore-wss writes them to
+  `~/.restore-wss/state/session.json`. That file is yours alone (mode `0700`), nothing is sent
+  anywhere, and private windows are dropped in three independent places — but if you would not write
+  your open tabs down on a piece of paper on your desk, set `browsers.enabled = false`, or list the
+  sites you care about in `browsers.exclude_urls`, or set `browsers.store = "titles"`. The feature is
+  off in exactly the way you configure it, and everything else keeps working.
+* **The session-file route is as fresh as Firefox chose to be** — confirmed. The documented flush
+  interval is 15 s, and the live file was 48 minutes old when probed (an idle browser with nothing to
+  flush). It is what Firefox last wrote down, not what is on screen this second.
+* **Which browser window a tab set belongs to is a heuristic** — confirmed, and it is the weakest
+  link. Firefox titles a window after its active tab, so the title is the signal; geometry is
+  useless on this machine because every window is maximized at the same size. Two windows that look
+  alike and hold *different* tabs are recorded as "a browser window, tabs unknown" rather than being
+  given a coin-toss tab set. Two showing the same tabs are matched, because there the choice does
+  not matter.
+* **Tabs come back in a new window, not the old one.** Restore asks the browser to create a window
+  with those URLs; the compositor window is then placed as any other. What is lost: the window's own
+  session history and anything the pages held in memory.
+* **Per-tab back/forward history, scroll position and form state are not restored** — by design.
+  Reading them needs a content script in every page.
+* **Tab groups are recorded but not recreated** — the group id travels in the snapshot; rebuilding
+  groups needs the `tabGroups` permission and a newer API than the minimum this add-on targets.
+* **The add-on must be signed to install in release Firefox** — and signing needs *your* AMO
+  credentials. The release ships the packaged `.xpi`; CI signs it only when `AMO_JWT_ISSUER` and
+  `AMO_JWT_SECRET` are configured in the repository. Without them the add-on installs in Developer
+  Edition/Nightly or as a temporary add-on, and the session-file route works regardless.
+* **A second Firefox profile is not distinguished at restore time.** The profile name is recorded,
+  but restore hands URLs to whichever profile the running Firefox is using.
+* **Chromium-family browsers are not supported** — by decision. The reader, the correlation and the
+  reconciliation are all family-agnostic, but SNSS parsing and a second host manifest are not
+  written.
+
 ## VPN
 
 * **NetworkManager only** — by design, per the answered open question. `wg-quick`, Tailscale and

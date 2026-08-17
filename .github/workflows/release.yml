@@ -33,7 +33,11 @@ jobs:
           cp -r src/extension "$stage/extension"
           mkdir -p "$stage/data"
           cp -r data/systemd data/autostart "$stage/data/"
+          cp -r src/native-host "$stage/native-host"
           cp README.md LICENSE install.sh "$stage/"
+
+          # The add-on, as a .xpi — which is a zip with the manifest at its root.
+          ( cd src/browser-extension && zip -qr "$stage/browser-extension.xpi" . )
           # Stamp the version the tag says, so `restore-wss --version` matches the release.
           sed -i "s/^VERSION = .*/VERSION = \"${version}\"/" "$stage/restore_wss/cli.py"
           sed -i "s/\"version-name\": \"[^\"]*\"/\"version-name\": \"${version}\"/" \
@@ -41,11 +45,37 @@ jobs:
           tar -czf restore-wss.tar.gz -C "$(dirname "$stage")" restore-wss
           sha256sum restore-wss.tar.gz > restore-wss.tar.gz.sha256
 
+      # Signing is the user's AMO account, not ours: the job runs only when the credentials are in
+      # the repository's secrets, and the release says which kind of asset it carries. An unsigned
+      # .xpi still installs in Developer Edition/Nightly and in a temporary session; release Firefox
+      # requires the signature. See the README section "The Firefox add-on".
+      - name: Sign the add-on with AMO, if credentials are configured
+        id: signing
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          if [ -z "${AMO_JWT_ISSUER:-}" ] || [ -z "${AMO_JWT_SECRET:-}" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "No AMO credentials configured; shipping the add-on unsigned." >&2
+            exit 0
+          fi
+          npx --yes web-ext@8 sign --channel unlisted \
+            --source-dir src/browser-extension \
+            --artifacts-dir signed \
+            --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET"
+          signed_xpi="$(find signed -name '*.xpi' | head -1)"
+          [ -n "$signed_xpi" ] || { echo "web-ext produced no .xpi" >&2; exit 1; }
+          cp "$signed_xpi" restore-wss-firefox-signed.xpi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
       - name: Check the artefact contains what the installer expects
         run: |
           tar -tzf restore-wss.tar.gz | tee /dev/stderr | grep -q 'restore-wss/restore_wss/cli.py'
           for entry in restore-wss/extension/metadata.json \
               restore-wss/extension/extension.js \
+              restore-wss/native-host/restore-wss-firefox-host.py \
+              restore-wss/browser-extension.xpi \
               restore-wss/data/systemd/restore-wss.service \
               restore-wss/data/autostart/restore-wss-login.desktop \
               restore-wss/install.sh; do
@@ -60,6 +90,7 @@ jobs:
           files: |
             restore-wss.tar.gz
             restore-wss.tar.gz.sha256
+            restore-wss-firefox-signed.xpi
           generate_release_notes: true
           body: |
             Install with:
@@ -69,3 +100,7 @@ jobs:
             ```
 
             Then log out and back in, and `gnome-extensions enable session-core@restore-wss.patxi`.
+
+            Browser tabs work with no add-on — restore-wss reads Firefox's own session file. The
+            Firefox add-on (live tab state) is inside the tarball as `browser-extension.xpi`, and
+            is signed only when this repository has `AMO_JWT_ISSUER`/`AMO_JWT_SECRET` configured.

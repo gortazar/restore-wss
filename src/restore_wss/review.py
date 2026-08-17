@@ -42,6 +42,12 @@ class ReviewModel:
     def selected_indices(self) -> list[int]:
         return [row.index for row in self.rows if row.selected and row.kind == "window"]
 
+    @property
+    def restore_tabs(self) -> bool:
+        """Whether the browser half was left switched on. No browser rows means nothing to ask."""
+        browser_rows = [row for row in self.rows if row.kind == "browser"]
+        return any(row.selected for row in browser_rows) if browser_rows else True
+
 
 def build_model(plan: dict) -> ReviewModel:
     """Turn the daemon's plan into what the window shows."""
@@ -71,6 +77,24 @@ def build_model(plan: dict) -> ReviewModel:
                 title=title.strip() or description,
                 subtitle=subtitle.strip(),
                 selected=confidence >= PRE_TICK_CONFIDENCE,
+            )
+        )
+
+    for entry in plan.get("browser", []):
+        # Only "open" is a choice: a window whose tabs were never captured has nothing to
+        # reopen, and a switch for it would offer to do nothing. Those become notes instead.
+        if entry.get("kind") != "open":
+            model.notes.append(entry.get("description", ""))
+            continue
+        # Index -2 marks "the browser half": Restore passes it on as a whole, because the browser
+        # reconciles window by window itself.
+        model.rows.append(
+            Row(
+                index=-2,
+                title=entry.get("description", "browser tabs"),
+                subtitle="browser tabs",
+                selected=True,
+                kind="browser",
             )
         )
 
@@ -151,16 +175,20 @@ def run_review(client, model: ReviewModel | None = None, screenshot: str | None 
         page = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(title=model.heading)
         switches: dict[int, Gtk.Switch] = {}
+        browser_switches: list[Gtk.Switch] = []
 
         for row in model.rows:
             action_row = Adw.ActionRow(title=row.title, subtitle=row.subtitle)
             action_row.set_title_lines(2)
             action_row.set_subtitle_lines(2)
-            if row.kind == "window":
+            if row.kind in ("window", "browser"):
                 switch = Gtk.Switch(active=row.selected, valign=Gtk.Align.CENTER)
                 action_row.add_suffix(switch)
                 action_row.set_activatable_widget(switch)
-                switches[row.index] = switch
+                if row.kind == "window":
+                    switches[row.index] = switch
+                else:
+                    browser_switches.append(switch)
             else:
                 action_row.add_suffix(Gtk.Image.new_from_icon_name("network-vpn-symbolic"))
             group.add(action_row)
@@ -186,7 +214,7 @@ def run_review(client, model: ReviewModel | None = None, screenshot: str | None 
 
         restore = Gtk.Button(label="Restore")
         restore.add_css_class("suggested-action")
-        restore.set_sensitive(bool(switches))
+        restore.set_sensitive(bool(switches) or bool(browser_switches))
 
         def on_restore(_button):
             chosen = [index for index, switch in switches.items() if switch.get_active()]

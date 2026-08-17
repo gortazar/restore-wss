@@ -94,6 +94,24 @@ current one, the session was not lost to a reboot and there is nothing to offer.
     ]
   },
 
+  // Present only for declared browsers (v0.2). `source` says which of the two readers produced
+  // it, because "the browser told us" and "we read its session file, which may be minutes stale"
+  // are different claims; `confidence` is how sure the correlation between this compositor window
+  // and that browser window is (docs/browser-extensions-research.md §6).
+  "browser": {
+    "family": "firefox",
+    "version": "142.0",
+    "profile": "cqdb58zj.default",       // the directory name, never the path
+    "window_id": "7",                    // the browser's own id; per-run only
+    "source": "extension",               // or "session-file"
+    "confidence": 0.86,                  // omitted when it is 1.0
+    "reason": "title 0.86; reported by the browser extension",
+    "tabs": [
+      {"url": "https://gnome.org/", "title": "GNOME", "active": true},
+      {"url": "https://mail.example.com/", "title": "Inbox", "pinned": true}
+    ]
+  },
+
   // Reserved. On GNOME 47+ an application that restores itself through
   // xdg-session-management-v1 is recorded here and left alone. Always empty on GNOME 46, which
   // does not have the protocol (docs/platform-findings.md §1).
@@ -118,6 +136,7 @@ defaults.
 | `schema` | Version | Change |
 | --- | --- | --- |
 | 1 | 0.1 | first format |
+| 1 | 0.2 | added the per-window `browser` block. **Not a bump**: a v0.1 snapshot has no block and restores exactly as it did, and a v0.2 snapshot read by v0.1 keeps the block as an unknown field. There is a test for each direction |
 
 A snapshot with a *higher* schema than this build understands is still read — the fields it knows
 are used and the rest are carried through — because refusing to read it would be worse than
@@ -134,6 +153,12 @@ paused = false              # stop capturing without stopping the daemon
 exclude_apps = []           # wm_class or desktop id, never recorded
 exclude_paths = []          # path prefixes; documents and working directories under them are dropped
 # terminals = ["gnome-terminal-server", "Alacritty"]   # which apps get their process tree read
+
+[browsers]
+enabled = true              # capture tabs at all; off leaves the rest of restore-wss working
+store = "urls"              # "urls" (url + title) | "titles" | "none" (window shape only)
+exclude_urls = []           # substrings or globs; matching tabs are never recorded
+# browsers = ["firefox"]    # which applications are browsers
 
 [commands]
 policy = "whitelist"        # never | whitelist | always
