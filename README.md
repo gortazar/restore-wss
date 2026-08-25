@@ -1,5 +1,7 @@
 # restore-wss — put the workspaces back the way they were
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=gortazar_restore-wss&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=gortazar_restore-wss)
+
 ```console
 curl -fsSL https://raw.githubusercontent.com/gortazar/restore-wss/main/install.sh | sh
 ```

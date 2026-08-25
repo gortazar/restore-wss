@@ -17,6 +17,10 @@
         python = pkgs.python3.withPackages (ps: [
           ps.pygobject3
           ps.pytest
+          # Used only by the coverage job in ci.yml. `nix flake check` does not measure
+          # coverage: a profile is an artefact that has to leave the sandbox, and a check
+          # keeps nothing but its own success.
+          ps.pytest-cov
         ]);
 
         # Every source file the checks look at. Kept as one list so a new directory cannot be

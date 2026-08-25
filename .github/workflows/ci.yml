@@ -15,3 +15,40 @@ jobs:
       # Runs the whole blocking set: unit tests, the D-Bus suite on a private bus, ruff, and the
       # extension syntax check. Everything hermetic; nothing needs a desktop.
       - run: nix flake check --print-build-logs
+
+  # Separate from `check` on purpose: `nix flake check` runs the suite hermetically and
+  # keeps nothing, and a coverage report is an artefact that has to leave the sandbox.
+  # Only the unit suite — tests/dbus needs a session bus, and instrumenting it would buy a
+  # few percent for a lot of flakiness.
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: "experimental-features = nix-command flakes"
+      - run: |
+          nix develop --command env PYTHONPATH="$PWD/src" \
+            python -m pytest tests/unit -q \
+              --cov=src/restore_wss --cov-report=xml:coverage.xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+          if-no-files-found: error
+          retention-days: 1
+
+  # The SonarQube Cloud quality gate. A job of its own, beside `check` rather than inside
+  # it, so a red gate can never be mistaken for a failing test suite — and because the gate
+  # is advisory: it reports, it does not block.
+  #
+  # The `if` matters here because this workflow has no branch filter: without it a branch
+  # would be analysed twice, once as a branch and once as its pull request.
+  sonar:
+    needs: coverage
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    uses: gortazar/aideas/.github/workflows/sonar.yml@v1
+    with:
+      coverage-artifact: coverage
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
