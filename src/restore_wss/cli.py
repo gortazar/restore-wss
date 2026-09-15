@@ -221,9 +221,15 @@ def _restore(args, client_factory=None, confirm=None) -> int:
     return 1 if failures else 0
 
 
-def _list(args) -> int:
+def _list(args) -> None:
     """The snapshots on disk. There are at most two, by design (the answered open question rules
-    out a history), and saying so is more useful than pretending there is a list to choose from."""
+    out a history), and saying so is more useful than pretending there is a list to choose from.
+
+    Returns nothing on purpose: this prints and cannot fail — a missing or unreadable generation is
+    simply one that is not listed — so there is no exit code for it to compute, and ``main``
+    supplies the ``0``. That is the shape ``status`` uses two arms above, and declaring an ``int``
+    here only to return the same ``0`` from every branch is what `python:S3516` objects to.
+    """
     import json as _json
 
     store = SnapshotStore(default_state_dir())
@@ -245,17 +251,16 @@ def _list(args) -> int:
 
     if args.json:
         print(_json.dumps(found, indent=2))
-        return 0
+        return
     if not found:
         print("restore-wss: no snapshots yet.")
-        return 0
+        return
     for entry in found:
         print(
             f"{entry['generation']:>8}  {entry['captured']}  "
             f"{entry['windows']} window(s)  {entry['path']}"
         )
     print("\nOnly these two are kept: the current snapshot and the one before it.")
-    return 0
 
 
 def _diff(args, source: SnapshotSource | None = None) -> int:
@@ -369,7 +374,8 @@ def main(
             return 1
 
     if args.command == "list":
-        return _list(args)
+        _list(args)
+        return 0
 
     if args.command == "diff":
         return _diff(args, source=source)
